@@ -1,0 +1,622 @@
+{
+  "Files": {
+    "de": "Dateien",
+    "ar": "الملفات"
+  },
+  "Name": {
+    "de": "Name",
+    "ar": "الاسم"
+  },
+  "Size": {
+    "de": "Größe",
+    "ar": "الحجم"
+  },
+  "Modified": {
+    "de": "Geändert",
+    "ar": "آخر تعديل"
+  },
+  "Type": {
+    "de": "Typ",
+    "ar": "النوع"
+  },
+  "Folder": {
+    "de": "Ordner",
+    "ar": "مجلد"
+  },
+  "File": {
+    "de": "Datei",
+    "ar": "ملف"
+  },
+  "Home": {
+    "de": "Persönlicher Ordner",
+    "ar": "المجلد الشخصي"
+  },
+  "Places": {
+    "de": "Orte",
+    "ar": "الأماكن"
+  },
+  "Locations": {
+    "de": "Speicherorte",
+    "ar": "المواقع"
+  },
+  "Documents": {
+    "de": "Dokumente",
+    "ar": "المستندات"
+  },
+  "Downloads": {
+    "de": "Downloads",
+    "ar": "التنزيلات"
+  },
+  "Trash": {
+    "de": "Papierkorb",
+    "ar": "المهملات"
+  },
+  "Computer": {
+    "de": "Rechner",
+    "ar": "الحاسوب"
+  },
+  "Network": {
+    "de": "Netzwerk",
+    "ar": "الشبكة"
+  },
+  "Download Manager": {
+    "de": "Downloadverwaltung",
+    "ar": "مدير التنزيلات"
+  },
+  "Back": {
+    "de": "Zurück",
+    "ar": "رجوع"
+  },
+  "Forward": {
+    "de": "Vorwärts",
+    "ar": "تقدم"
+  },
+  "Go to parent folder": {
+    "de": "Übergeordneten Ordner öffnen",
+    "ar": "فتح المجلد الأب"
+  },
+  "Copy path": {
+    "de": "Pfad kopieren",
+    "ar": "نسخ المسار"
+  },
+  "Copy Path": {
+    "de": "Pfad kopieren",
+    "ar": "نسخ المسار"
+  },
+  "Folder path": {
+    "de": "Ordnerpfad",
+    "ar": "مسار المجلد"
+  },
+  "Open": {
+    "de": "Öffnen",
+    "ar": "فتح"
+  },
+  "Close": {
+    "de": "Schließen",
+    "ar": "إغلاق"
+  },
+  "Cancel": {
+    "de": "Abbrechen",
+    "ar": "إلغاء"
+  },
+  "Pause": {
+    "de": "Pausieren",
+    "ar": "إيقاف مؤقت"
+  },
+  "Resume": {
+    "de": "Fortsetzen",
+    "ar": "استئناف"
+  },
+  "Skip": {
+    "de": "Überspringen",
+    "ar": "تخطي"
+  },
+  "Replace": {
+    "de": "Ersetzen",
+    "ar": "استبدال"
+  },
+  "Merge": {
+    "de": "Zusammenführen",
+    "ar": "دمج"
+  },
+  "Retry": {
+    "de": "Erneut versuchen",
+    "ar": "إعادة المحاولة"
+  },
+  "Save": {
+    "de": "Speichern",
+    "ar": "حفظ"
+  },
+  "Copy": {
+    "de": "Kopieren",
+    "ar": "نسخ"
+  },
+  "Cut": {
+    "de": "Ausschneiden",
+    "ar": "قص"
+  },
+  "Paste": {
+    "de": "Einfügen",
+    "ar": "لصق"
+  },
+  "Undo": {
+    "de": "Rückgängig",
+    "ar": "تراجع"
+  },
+  "Redo": {
+    "de": "Wiederholen",
+    "ar": "إعادة"
+  },
+  "Rename": {
+    "de": "Umbenennen",
+    "ar": "إعادة التسمية"
+  },
+  "Duplicate": {
+    "de": "Duplizieren",
+    "ar": "تكرار"
+  },
+  "Create Link": {
+    "de": "Verknüpfung erstellen",
+    "ar": "إنشاء رابط"
+  },
+  "Delete": {
+    "de": "Löschen",
+    "ar": "حذف"
+  },
+  "Restore": {
+    "de": "Wiederherstellen",
+    "ar": "استعادة"
+  },
+  "Move to Trash": {
+    "de": "In den Papierkorb verschieben",
+    "ar": "نقل إلى المهملات"
+  },
+  "Delete Permanently": {
+    "de": "Endgültig löschen",
+    "ar": "حذف نهائي"
+  },
+  "Properties": {
+    "de": "Eigenschaften",
+    "ar": "الخصائص"
+  },
+  "Preview": {
+    "de": "Vorschau",
+    "ar": "معاينة"
+  },
+  "Settings": {
+    "de": "Einstellungen",
+    "ar": "الإعدادات"
+  },
+  "View Settings": {
+    "de": "Ansichtseinstellungen",
+    "ar": "إعدادات العرض"
+  },
+  "Extensions": {
+    "de": "Erweiterungen",
+    "ar": "الامتدادات"
+  },
+  "About": {
+    "de": "Info",
+    "ar": "عن التطبيق"
+  },
+  "View": {
+    "de": "Ansicht",
+    "ar": "العرض"
+  },
+  "List": {
+    "de": "Liste",
+    "ar": "قائمة"
+  },
+  "Grid": {
+    "de": "Raster",
+    "ar": "شبكة"
+  },
+  "Sort by": {
+    "de": "Sortieren nach",
+    "ar": "الترتيب حسب"
+  },
+  "Sort order": {
+    "de": "Sortierreihenfolge",
+    "ar": "اتجاه الترتيب"
+  },
+  "Ascending": {
+    "de": "Aufsteigend",
+    "ar": "تصاعدي"
+  },
+  "Descending": {
+    "de": "Absteigend",
+    "ar": "تنازلي"
+  },
+  "Sort folders before files": {
+    "de": "Ordner vor Dateien sortieren",
+    "ar": "ترتيب المجلدات قبل الملفات"
+  },
+  "Show hidden files": {
+    "de": "Versteckte Dateien anzeigen",
+    "ar": "إظهار الملفات المخفية"
+  },
+  "Grid item information": {
+    "de": "Informationen im Raster",
+    "ar": "معلومات عناصر الشبكة"
+  },
+  "Terminal": {
+    "de": "Terminal",
+    "ar": "الطرفية"
+  },
+  "Terminal command": {
+    "de": "Terminalbefehl",
+    "ar": "أمر الطرفية"
+  },
+  "Automatic": {
+    "de": "Automatisch",
+    "ar": "تلقائي"
+  },
+  "Keyboard Shortcuts": {
+    "de": "Tastenkombinationen",
+    "ar": "اختصارات لوحة المفاتيح"
+  },
+  "Search": {
+    "de": "Suchen",
+    "ar": "بحث"
+  },
+  "Search this folder…": {
+    "de": "Diesen Ordner durchsuchen…",
+    "ar": "البحث في هذا المجلد…"
+  },
+  "Search subfolders…": {
+    "de": "Unterordner durchsuchen…",
+    "ar": "البحث في المجلدات الفرعية…"
+  },
+  "Search this folder": {
+    "de": "Diesen Ordner durchsuchen",
+    "ar": "البحث في هذا المجلد"
+  },
+  "Search subfolders": {
+    "de": "Unterordner durchsuchen",
+    "ar": "البحث في المجلدات الفرعية"
+  },
+  "This folder is empty": {
+    "de": "Dieser Ordner ist leer",
+    "ar": "هذا المجلد فارغ"
+  },
+  "No matches": {
+    "de": "Keine Treffer",
+    "ar": "لا توجد نتائج"
+  },
+  "Nothing selected to trash": {
+    "de": "Keine Auswahl für den Papierkorb",
+    "ar": "لم تُحدد عناصر لنقلها إلى المهملات"
+  },
+  "Nothing selected to copy": {
+    "de": "Keine Auswahl zum Kopieren",
+    "ar": "لم تُحدد عناصر لنسخها"
+  },
+  "Nothing selected to move": {
+    "de": "Keine Auswahl zum Verschieben",
+    "ar": "لم تُحدد عناصر لنقلها"
+  },
+  "The clipboard contains no supported local files.": {
+    "de": "Die Zwischenablage enthält keine unterstützten lokalen Dateien.",
+    "ar": "لا تحتوي الحافظة على ملفات محلية مدعومة."
+  },
+  "Focus this Files window before using the clipboard.": {
+    "de": "Aktivieren Sie dieses Dateien-Fenster vor der Verwendung der Zwischenablage.",
+    "ar": "فعّل نافذة الملفات هذه قبل استخدام الحافظة."
+  },
+  "The desktop clipboard is busy. Try again.": {
+    "de": "Die Zwischenablage ist beschäftigt. Versuchen Sie es erneut.",
+    "ar": "الحافظة مشغولة. حاول مرة أخرى."
+  },
+  "The desktop clipboard request failed. No file operation was started.": {
+    "de": "Die Zwischenablageanfrage ist fehlgeschlagen. Es wurde kein Dateivorgang gestartet.",
+    "ar": "فشل طلب الحافظة. لم تبدأ أي عملية ملفات."
+  },
+  "The destination changed before paste completed. Paste again in the intended folder.": {
+    "de": "Das Ziel hat sich geändert. Fügen Sie erneut im gewünschten Ordner ein.",
+    "ar": "تغيّر المجلد الوجهة. أعد اللصق في المجلد المطلوب."
+  },
+  "Can only drop onto a folder": {
+    "de": "Ablegen ist nur auf einem Ordner möglich",
+    "ar": "يمكن الإفلات في مجلد فقط"
+  },
+  "That folder is read-only": {
+    "de": "Dieser Ordner ist schreibgeschützt",
+    "ar": "هذا المجلد للقراءة فقط"
+  },
+  "Cannot drop an item onto itself": {
+    "de": "Ein Element kann nicht auf sich selbst abgelegt werden",
+    "ar": "لا يمكن إفلات عنصر على نفسه"
+  },
+  "Cannot move a folder into itself": {
+    "de": "Ein Ordner kann nicht in sich selbst verschoben werden",
+    "ar": "لا يمكن نقل مجلد إلى داخل نفسه"
+  },
+  "The dragged items are no longer available": {
+    "de": "Die gezogenen Elemente sind nicht mehr verfügbar",
+    "ar": "لم تعد العناصر المسحوبة متاحة"
+  },
+  "The items are already in that folder": {
+    "de": "Die Elemente befinden sich bereits in diesem Ordner",
+    "ar": "العناصر موجودة بالفعل في هذا المجلد"
+  },
+  "That drop is not allowed": {
+    "de": "Dieses Ablegen ist nicht erlaubt",
+    "ar": "هذا الإفلات غير مسموح"
+  },
+  "File conflict": {
+    "de": "Dateikonflikt",
+    "ar": "تعارض ملفات"
+  },
+  "Destination folder": {
+    "de": "Zielordner",
+    "ar": "المجلد الوجهة"
+  },
+  "Existing": {
+    "de": "Vorhanden",
+    "ar": "الحالي"
+  },
+  "Incoming": {
+    "de": "Neu",
+    "ar": "الوارد"
+  },
+  "Apply to all remaining conflicts": {
+    "de": "Auf alle weiteren Konflikte anwenden",
+    "ar": "تطبيق على جميع التعارضات المتبقية"
+  },
+  "Open in Terminal": {
+    "de": "Im Terminal öffnen",
+    "ar": "فتح في الطرفية"
+  },
+  "Reveal Parent Folder": {
+    "de": "Übergeordneten Ordner anzeigen",
+    "ar": "إظهار المجلد الأب"
+  },
+  "Move to…": {
+    "de": "Verschieben nach…",
+    "ar": "نقل إلى…"
+  },
+  "Copy to…": {
+    "de": "Kopieren nach…",
+    "ar": "نسخ إلى…"
+  },
+  "Extract Here": {
+    "de": "Hier entpacken",
+    "ar": "استخراج هنا"
+  },
+  "Extract To…": {
+    "de": "Entpacken nach…",
+    "ar": "استخراج إلى…"
+  },
+  "Compress to ZIP": {
+    "de": "Als ZIP komprimieren",
+    "ar": "ضغط إلى ZIP"
+  },
+  "Mount": {
+    "de": "Einhängen",
+    "ar": "وصل"
+  },
+  "Unmount": {
+    "de": "Aushängen",
+    "ar": "فصل"
+  },
+  "Mount and open": {
+    "de": "Einhängen und öffnen",
+    "ar": "وصل وفتح"
+  },
+  "Pin to Sidebar": {
+    "de": "An Seitenleiste anheften",
+    "ar": "تثبيت في الشريط الجانبي"
+  },
+  "Unpin from Sidebar": {
+    "de": "Aus Seitenleiste entfernen",
+    "ar": "إزالة من الشريط الجانبي"
+  },
+  "Toggle Details": {
+    "de": "Details umschalten",
+    "ar": "إظهار أو إخفاء التفاصيل"
+  },
+  "New folder": {
+    "de": "Neuer Ordner",
+    "ar": "مجلد جديد"
+  },
+  "New Folder": {
+    "de": "Neuer Ordner",
+    "ar": "مجلد جديد"
+  },
+  "New file": {
+    "de": "Neue Datei",
+    "ar": "ملف جديد"
+  },
+  "New File": {
+    "de": "Neue Datei",
+    "ar": "ملف جديد"
+  },
+  "New tab": {
+    "de": "Neuer Tab",
+    "ar": "لسان جديد"
+  },
+  "Close tab": {
+    "de": "Tab schließen",
+    "ar": "إغلاق اللسان"
+  },
+  "Select all": {
+    "de": "Alles auswählen",
+    "ar": "تحديد الكل"
+  },
+  "Select All": {
+    "de": "Alles auswählen",
+    "ar": "تحديد الكل"
+  },
+  "Refresh": {
+    "de": "Aktualisieren",
+    "ar": "تحديث"
+  },
+  "Move selection to folder": {
+    "de": "Auswahl in Ordner verschieben",
+    "ar": "نقل العناصر المحددة إلى مجلد"
+  },
+  "Copy selection to folder": {
+    "de": "Auswahl in Ordner kopieren",
+    "ar": "نسخ العناصر المحددة إلى مجلد"
+  },
+  "Extract archive to folder": {
+    "de": "Archiv in Ordner entpacken",
+    "ar": "استخراج الأرشيف إلى مجلد"
+  },
+  "Install a Files extension (.enzfiles)": {
+    "de": "Dateien-Erweiterung installieren (.enzfiles)",
+    "ar": "تثبيت امتداد للملفات (.enzfiles)"
+  },
+  "Download limit (KiB/s; 0 = unlimited)": {
+    "de": "Downloadlimit (KiB/s; 0 = unbegrenzt)",
+    "ar": "حد التنزيل (ك.بايت/ث؛ 0 = بلا حد)"
+  },
+  "Torrent upload limit (KiB/s; 0 = unlimited)": {
+    "de": "Torrent-Uploadlimit (KiB/s; 0 = unbegrenzt)",
+    "ar": "حد رفع التورنت (ك.بايت/ث؛ 0 = بلا حد)"
+  },
+  "Concurrent downloads (1–16)": {
+    "de": "Gleichzeitige Downloads (1–16)",
+    "ar": "التنزيلات المتزامنة (1–16)"
+  },
+  "URL or magnet link": {
+    "de": "URL oder Magnet-Link",
+    "ar": "رابط URL أو رابط مغناطيسي"
+  },
+  "Speed limit (KiB/s; 0 = unlimited)": {
+    "de": "Geschwindigkeitslimit (KiB/s; 0 = unbegrenzt)",
+    "ar": "حد السرعة (ك.بايت/ث؛ 0 = بلا حد)"
+  },
+  "Apply download settings": {
+    "de": "Downloadeinstellungen anwenden",
+    "ar": "تطبيق إعدادات التنزيل"
+  },
+  "Apply Permissions": {
+    "de": "Berechtigungen anwenden",
+    "ar": "تطبيق الأذونات"
+  },
+  "Read": {
+    "de": "Lesen",
+    "ar": "قراءة"
+  },
+  "Write": {
+    "de": "Schreiben",
+    "ar": "كتابة"
+  },
+  "Exec": {
+    "de": "Ausführen",
+    "ar": "تنفيذ"
+  },
+  "Owner": {
+    "de": "Eigentümer",
+    "ar": "المالك"
+  },
+  "Group": {
+    "de": "Gruppe",
+    "ar": "المجموعة"
+  },
+  "Other": {
+    "de": "Andere",
+    "ar": "الآخرون"
+  },
+  "Devices": {
+    "de": "Geräte",
+    "ar": "الأجهزة"
+  },
+  "Phones and cameras": {
+    "de": "Telefone und Kameras",
+    "ar": "الهواتف والكاميرات"
+  },
+  "Cloud and network": {
+    "de": "Cloud und Netzwerk",
+    "ar": "السحابة والشبكة"
+  },
+  "Show All Activity": {
+    "de": "Alle Aktivitäten anzeigen",
+    "ar": "إظهار جميع الأنشطة"
+  },
+  "Copying": {
+    "de": "Kopieren",
+    "ar": "جارٍ النسخ"
+  },
+  "Moving": {
+    "de": "Verschieben",
+    "ar": "جارٍ النقل"
+  },
+  "Copied": {
+    "de": "Kopiert",
+    "ar": "تم النسخ"
+  },
+  "Complete": {
+    "de": "Abgeschlossen",
+    "ar": "مكتمل"
+  },
+  "Failed": {
+    "de": "Fehlgeschlagen",
+    "ar": "فشل"
+  },
+  "Cancelled": {
+    "de": "Abgebrochen",
+    "ar": "أُلغي"
+  },
+  "Loading…": {
+    "de": "Wird geladen…",
+    "ar": "جارٍ التحميل…"
+  },
+  "Open With": {
+    "de": "Öffnen mit",
+    "ar": "فتح باستخدام"
+  },
+  "Always this app": {
+    "de": "Immer diese Anwendung",
+    "ar": "هذا التطبيق دائمًا"
+  },
+  "Ask each time": {
+    "de": "Jedes Mal fragen",
+    "ar": "السؤال في كل مرة"
+  },
+  "Select items matching…": {
+    "de": "Passende Elemente auswählen…",
+    "ar": "تحديد العناصر المطابقة…"
+  },
+  "Select items matching": {
+    "de": "Passende Elemente auswählen",
+    "ar": "تحديد العناصر المطابقة"
+  },
+  "Rename files": {
+    "de": "Dateien umbenennen",
+    "ar": "إعادة تسمية الملفات"
+  },
+  "File checksums": {
+    "de": "Dateiprüfsummen",
+    "ar": "بصمات الملفات"
+  },
+  "Calculate SHA-256 checksums for selected files and copy the results.": {
+    "de": "SHA-256-Prüfsummen für ausgewählte Dateien berechnen und die Ergebnisse kopieren.",
+    "ar": "احسب بصمات SHA-256 للملفات المحددة وانسخ النتائج."
+  },
+  "Copy SHA-256 checksums": {
+    "de": "SHA-256-Prüfsummen kopieren",
+    "ar": "نسخ بصمات SHA-256"
+  },
+  "Bundled": {
+    "de": "Mitgeliefert",
+    "ar": "مضمّن"
+  },
+  "Installed": {
+    "de": "Installiert",
+    "ar": "مثبّت"
+  },
+  "unknown": {
+    "de": "unbekannt",
+    "ar": "غير معروف"
+  },
+  "Show in Folder": {
+    "de": "Im Ordner anzeigen",
+    "ar": "إظهار في المجلد"
+  },
+  "Use Add download to fetch a file from an HTTP or HTTPS address.": {
+    "de": "Laden Sie eine Datei von einer HTTP- oder HTTPS-Adresse herunter.",
+    "ar": "نزّل ملفًا من عنوان HTTP أو HTTPS."
+  }
+}

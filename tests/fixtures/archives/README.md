@@ -1,0 +1,1 @@
+RAR fixtures from [libarchive tests](https://github.com/libarchive/libarchive/tree/master/libarchive/test): `test_read_format_rar.rar`, `test_read_format_rar5_compressed.rar`, and `test_read_format_rar5_encrypted.rar`. Redistribution follows libarchive’s BSD license; see LICENSE.libarchive.

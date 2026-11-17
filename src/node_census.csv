@@ -1,0 +1,20 @@
+# Exact diffed widget-tree census; tolerance 0 catches one added wrapper.
+# At 1400 the subtitle wrapper is absent; at 1024 and 768 the path stays inline,
+# so whole toolbar commands fold and leave the tree. At 375 the path takes its
+# own band and measurable leading chrome keeps seven command nodes inline.
+# The docked sidebar contributes `PinnedWidth`, rider pad and clearance pad
+# nodes; at 375 the sidebar is a drawer. Each toolbar command is an
+# independently keyed node, so folding changes the count per command.
+screen,width,height,model_items,widget_nodes,tolerance
+List,1400,900,5000,551,0
+List,1024,768,5000,507,0
+List,768,1024,5000,595,0
+List,375,812,5000,347,0
+Grid,1400,900,5000,480,0
+Grid,1024,768,5000,334,0
+Grid,768,1024,5000,330,0
+Grid,375,812,5000,155,0
+ListCollection,1400,900,100,551,0
+ListCollection,1400,900,5000,551,0
+GridCollection,1400,900,100,480,0
+GridCollection,1400,900,5000,480,0

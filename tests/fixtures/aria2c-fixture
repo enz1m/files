@@ -1,0 +1,127 @@
+#!/bin/sh
+# Deterministic, offline stand-in for `aria2c`, tracked so a sanctioned Files
+# visual capture can prove live torrent telemetry without a network, private
+# files, or ad-hoc PATH surgery.
+#
+# It is spawned exactly like the real backend by
+# `files-app::downloads::run_aria2_torrent`. Selection is DATA, not an
+# environment variable: the capture-only `downloads-torrent-fixture` boot path
+# (`DownloadsState::seed_torrent_fixture`) rewrites the data-carried
+# `backend_program` to this file via `fixture_backend_path()`, which resolves
+# `CARGO_MANIFEST_DIR/fixtures/aria2c-fixture` at compile time. The child is
+# still spawned as one program path, no shell, arguments passed positionally.
+# It reads only `--dir <staging>` and the trailing magnet URI, derives its
+# behaviour from the magnet display name (`dn=`), and writes aria2-shaped
+# console readout lines that `parse_aria2_telemetry` already understands:
+#
+#   [#<gid> <received>/<total>(<pct>%) DL:<rate> CN:<peers>]
+#
+# Behaviour by name so every row reaches a STABLE state a screenshot can catch:
+#   *running* / *second-running*  steady mid-transfer readout, held open until
+#                                 SIGTERM (pause/cancel/shutdown reaps it);
+#   *failed*                      partial progress, an actionable stderr line,
+#                                 then a non-zero exit;
+#   *complete*                    progress to 100%, a SPARSE bounded payload in
+#                                 the staging dir whose apparent size equals the
+#                                 emitted total (so the completed row reports
+#                                 received==total==100%, while on-disk blocks
+#                                 stay ~0), then exit 0;
+#   anything else                 a brief readout then a clean exit — this MUST
+#                                 include a local `.torrent` (no `dn=`, so an
+#                                 empty name): it may never fall into the
+#                                 held-open running loop and hang the caller.
+#
+# Production spawns the real `aria2c`; this stand-in runs only when the
+# capture-only `downloads-torrent-fixture` boot path points the data-carried
+# backend program at it.
+
+dir="."
+uri=""
+prev="--"
+for arg in "$@"; do
+	case "$prev" in
+	--dir)
+		dir="$arg"
+		;;
+	esac
+	case "$arg" in
+	magnet:*)
+		uri="$arg"
+		;;
+	esac
+	prev="$arg"
+done
+
+# Extract the display name (dn=...) from the magnet URI, best-effort.
+name=$(printf '%s\n' "$uri" | sed -n 's/.*[?&]dn=\([^&]*\).*/\1/p')
+
+gid=$(printf '%s' "$name" | cksum | cut -c1-6)
+
+emit() {
+	# $1 received  $2 total  $3 pct  $4 rate  $5 peers
+	printf '[#%s %s/%s(%s%%) DL:%s CN:%s]\n' "$gid" "$1" "$2" "$3" "$4" "$5"
+}
+
+case "$name" in
+*failed*)
+	emit 8MiB 500MiB 1 320KiB 3
+	sleep 0.2
+	emit 22MiB 500MiB 4 260KiB 2
+	printf 'aria2c: tracker announce failed: Connection refused (fixture)\n' >&2
+	exit 7
+	;;
+*complete*)
+	emit 250MiB 750MiB 33 4.1MiB 26
+	sleep 0.2
+	emit 620MiB 750MiB 82 3.8MiB 24
+	sleep 0.2
+	emit 750MiB 750MiB 100 0 0
+	# Leave a genuine app-owned payload whose APPARENT size equals the
+	# emitted total (750MiB = 786432000 bytes). `publish_owned_payload`
+	# sums each file's `metadata().len()`, so the completed row reports
+	# received==total==100% and is truthful about the transfer size. The
+	# file is SPARSE (bounded: ~0 disk blocks), so the fixture never writes
+	# 750MiB of real data. `truncate` first; `dd` seek is the portable
+	# fallback — both create a hole, not allocated zeros.
+	mkdir -p "$dir" 2>/dev/null || true
+	truncate -s 786432000 "$dir/$name.payload" 2>/dev/null ||
+		dd if=/dev/null of="$dir/$name.payload" bs=1 seek=786432000 2>/dev/null
+	printf 'Download complete: %s\n' "$name"
+	exit 0
+	;;
+*running*)
+	# Steady mid-transfer readout, re-emitted so a late capture still finds
+	# telemetry, then held open until the app reaps the process group.
+	# `*second-running*` reaches here too (it contains `running`) and only
+	# adjusts the numbers below.
+	received=180MiB
+	total=4.0GiB
+	pct=4
+	rate=6.4MiB
+	peers=31
+	case "$name" in
+	*second-running*)
+		received=96MiB
+		total=2.6GiB
+		pct=3
+		rate=3.1MiB
+		peers=18
+		;;
+	esac
+	i=0
+	while [ "$i" -lt 600 ]; do
+		emit "$received" "$total" "$pct" "$rate" "$peers"
+		i=$((i + 1))
+		sleep 1
+	done
+	exit 0
+	;;
+*)
+	# Anything else — including a local `.torrent` whose magnet has no
+	# display name — emits one brief readout and exits cleanly at once.
+	# It must NOT enter the held-open loop above, or a `.torrent` add would
+	# hang the queue for ten minutes.
+	emit 12MiB 900MiB 1 128KiB 4
+	exit 0
+	;;
+esac

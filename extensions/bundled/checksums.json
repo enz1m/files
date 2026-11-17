@@ -1,0 +1,12 @@
+{
+  "api": 1,
+  "id": "org.enzui.checksums",
+  "version": "1.0.0",
+  "name": "File checksums",
+  "author": "enzUI",
+  "description": "Calculate SHA-256 checksums for selected files and copy the results.",
+  "worker": {"kind": "builtin", "id": "checksum"},
+  "permissions": ["clipboard"],
+  "actions": [{"id": "sha256", "label": "Copy SHA-256 checksums", "icon": "hash", "scope": "files", "max_selection": 32}],
+  "settings": []
+}

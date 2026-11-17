@@ -1,0 +1,156 @@
+{
+  "files-compressing-count-e5432aa7": [
+    "count"
+  ],
+  "files-count-cleanup-worker-panicked-during-shutdown-a7c56373": [
+    "count"
+  ],
+  "files-count-for-1488f220": [
+    "count"
+  ],
+  "files-delete-failed-for-f-items-5664ecf3": [
+    "f"
+  ],
+  "files-deleted-n-f-failed-188847e3": [
+    "f",
+    "n"
+  ],
+  "files-deleted-n-items-50b43ad0": [
+    "n"
+  ],
+  "files-deleting-count-8422f846": [
+    "count"
+  ],
+  "files-deleting-count-trash-dca38a5d": [
+    "count"
+  ],
+  "files-done-failed-first-7fd86c3e": [
+    "done"
+  ],
+  "files-duplicated-items-c2f2ac02": [
+    "arg0"
+  ],
+  "files-file-size-changed-during-read-expected-57701d19": [
+    "n"
+  ],
+  "files-items-417b3c8f": [
+    "arg1"
+  ],
+  "files-items-selected-075427f0": [
+    "arg0"
+  ],
+  "files-kind-completed-for-n-items-some-344778ec": [
+    "n"
+  ],
+  "files-kind-completed-for-n-items-the-a0b233ad": [
+    "n"
+  ],
+  "files-kind-completed-undo-is-unavailable-for-688b23ad": [
+    "n"
+  ],
+  "files-kind-completed-undo-is-unavailable-for-895cad78": [
+    "total"
+  ],
+  "files-moved-n-items-to-trash-05fe5a66": [
+    "n"
+  ],
+  "files-moved-n-to-trash-f-failed-a8c2f50f": [
+    "f",
+    "n"
+  ],
+  "files-moving-count-to-trash-150e0511": [
+    "count"
+  ],
+  "files-name-entries-published-remaining-count-remaining-177a8fac": [
+    "remaining_count"
+  ],
+  "files-of-f16446b9": [
+    "arg0",
+    "arg1"
+  ],
+  "files-page-does-not-exist-what-has-e609b24d": [
+    "arg0",
+    "page_count"
+  ],
+  "files-permanently-delete-items-a48b572b": [
+    "arg0"
+  ],
+  "files-permanently-delete-n-items-190e7166": [
+    "n"
+  ],
+  "files-rename-failed-for-f-file-s-60a32542": [
+    "f"
+  ],
+  "files-renamed-n-file-s-f-failed-f5c76163": [
+    "f",
+    "n"
+  ],
+  "files-renamed-n-files-af03a8aa": [
+    "n"
+  ],
+  "files-renaming-count-774bf76c": [
+    "count"
+  ],
+  "files-total-selected-1-will-be-renamed-5aa0f67f": [
+    "total"
+  ],
+  "files-total-selected-n-will-be-renamed-be97a3b0": [
+    "n",
+    "total"
+  ],
+  "files-total-selected-no-name-would-change-102adb58": [
+    "total"
+  ],
+  "files-total-selected-resolve-the-conflicts-below-26532d7d": [
+    "total"
+  ],
+  "files-trash-failed-for-f-items-5f8eca8a": [
+    "f"
+  ],
+  "files-trash-listing-n-entries-have-refused-52d31b7a": [
+    "n"
+  ],
+  "files-item-count": [
+    "count"
+  ],
+  "files-more-items": [
+    "count"
+  ],
+  "files-copying-items": [
+    "count"
+  ],
+  "files-moving-items": [
+    "count"
+  ],
+  "files-file-count": [
+    "count"
+  ],
+  "files-folder-count": [
+    "count"
+  ],
+  "files-unsafe-count": [
+    "count"
+  ],
+  "files-clipboard-copied": [
+    "count"
+  ],
+  "files-clipboard-cut": [
+    "count"
+  ],
+  "files-activity-downloading": [
+    "count"
+  ],
+  "files-activity-in-progress": [
+    "count"
+  ],
+  "files-browse-position": [
+    "index",
+    "count"
+  ],
+  "files-restore-count": [
+    "count"
+  ],
+  "files-items-restored": [
+    "count"
+  ]
+}

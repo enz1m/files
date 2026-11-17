@@ -1,0 +1,15 @@
+{
+  "api": 1,
+  "id": "org.example.hello",
+  "version": "1.0.0",
+  "name": "Hello Files",
+  "author": "Example author",
+  "description": "A small Rust extension demonstrating file actions, background actions and typed settings.",
+  "worker": {"kind": "native", "program": "bin/hello", "target": "linux-x86_64"},
+  "permissions": [],
+  "actions": [
+    {"id": "greet", "label": "Say hello", "icon": "message-circle", "scope": "selection", "max_selection": 32},
+    {"id": "folder", "label": "Say hello to this folder", "icon": "message-circle", "scope": "background", "min_selection": 0}
+  ],
+  "settings": [{"id": "greeting", "label": "Greeting", "value": {"type": "text", "default": "Hello"}}]
+}
