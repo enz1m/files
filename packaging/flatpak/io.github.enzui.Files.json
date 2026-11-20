@@ -1,0 +1,163 @@
+{
+  "app-id": "io.github.enzui.Files",
+  "branch": "stable",
+  "runtime": "org.freedesktop.Platform",
+  "runtime-version": "26.08",
+  "sdk": "org.freedesktop.Sdk",
+  "sdk-extensions": [
+    "org.freedesktop.Sdk.Extension.rust-stable"
+  ],
+  "command": "files-app",
+  "finish-args": [
+    "--socket=wayland",
+    "--device=dri",
+    "--share=network",
+    "--socket=pulseaudio",
+    "--filesystem=host",
+    "--talk-name=org.gtk.vfs.*",
+    "--filesystem=xdg-run/gvfs",
+    "--filesystem=xdg-run/gvfsd",
+    "--system-talk-name=org.freedesktop.UDisks2",
+    "--talk-name=org.enzimos.Mount1",
+    "--system-talk-name=org.enzimos.History1"
+  ],
+  "build-options": {
+    "append-path": "/usr/lib/sdk/rust-stable/bin"
+  },
+  "modules": [
+    {
+      "name": "poppler-data",
+      "buildsystem": "cmake-ninja",
+      "license-files": [
+        "COPYING",
+        "COPYING.adobe",
+        "COPYING.gpl2"
+      ],
+      "sources": [
+        {
+          "type": "archive",
+          "url": "https://poppler.freedesktop.org/poppler-data-0.4.12.tar.gz",
+          "sha256": "c835b640a40ce357e1b83666aabd95edffa24ddddd49b8daff63adb851cdab74"
+        }
+      ]
+    },
+    {
+      "name": "poppler",
+      "buildsystem": "cmake-ninja",
+      "license-files": [
+        "COPYING",
+        "COPYING3"
+      ],
+      "config-opts": [
+        "-DCMAKE_BUILD_TYPE=Release",
+        "-DENABLE_BOOST=OFF",
+        "-DENABLE_UTILS=OFF",
+        "-DENABLE_CPP=OFF",
+        "-DENABLE_QT5=OFF",
+        "-DENABLE_QT6=OFF",
+        "-DENABLE_NSS3=OFF",
+        "-DENABLE_GPGME=OFF",
+        "-DENABLE_GOBJECT_INTROSPECTION=OFF",
+        "-DBUILD_GTK_TESTS=OFF",
+        "-DBUILD_MANUAL_TESTS=OFF"
+      ],
+      "sources": [
+        {
+          "type": "archive",
+          "url": "https://poppler.freedesktop.org/poppler-26.11.0.tar.xz",
+          "sha256": "41c32680160addf5a8dd7a830e4869c01e9f6bee1abb91e44fabd1ba9d7828fb"
+        }
+      ]
+    },
+    {
+      "name": "files",
+      "buildsystem": "simple",
+      "build-commands": [
+        "cargo build --locked --offline --release --jobs \"${FLATPAK_BUILDER_N_JOBS:-2}\" --bin files-app",
+        "install -Dm755 target/release/files-app /app/bin/files-app",
+        "install -Dm644 assets/io.github.enzui.Files.desktop /app/share/applications/io.github.enzui.Files.desktop",
+        "install -Dm644 packaging/flatpak/io.github.enzui.Files.metainfo.xml /app/share/metainfo/io.github.enzui.Files.metainfo.xml",
+        "install -Dm644 assets/io.github.enzui.Files.svg /app/share/icons/hicolor/scalable/apps/io.github.enzui.Files.svg",
+        "install -Dm644 LICENSE /app/share/licenses/io.github.enzui.Files/LICENSE",
+        "install -Dm644 assets/io.github.enzui.Files.extensions.xml /app/share/mime/packages/io.github.enzui.Files.xml",
+        "install -Dm644 vendor/gst-curl/LICENSE-MIT /app/share/licenses/io.github.enzui.Files/gst-curl/LICENSE-MIT",
+        "install -Dm644 vendor/gst-curl/UPSTREAM.json /app/share/licenses/io.github.enzui.Files/gst-curl/UPSTREAM.json"
+      ],
+      "sources": [
+        {
+          "type": "git",
+          "url": "https://github.com/enz1m/files.git",
+          "commit": "@ENZIM_SOURCE_COMMIT@",
+          "disable-submodules": true
+        },
+        {
+          "type": "archive",
+          "url": "https://github.com/enz1m/files/releases/download/v0.1.1/files-cargo-vendor-0.1.1.tar.xz",
+          "sha256": "c577e6738469e2689ba9324fcadca45e060de83b2c8d47ddd47904d514ea7ddd",
+          "strip-components": 1
+        },
+        {
+          "type": "file",
+          "url": "https://raw.githubusercontent.com/enz1m/enzim-winit/40eeb41f8637ef1620afa377ba006874224b6d65/wayland-protocols/xdg-session-management-v1.xml",
+          "sha256": "3674591ca8e68f76297c535e8edd6783d84b59086c38ebe08ff5ff1f2dec5bae",
+          "dest": "vendor/winit-0.30.13/wayland-protocols"
+        },
+        {
+          "type": "file",
+          "url": "https://raw.githubusercontent.com/enz1m/enzui/7275e9a2e99ad0ca9342c179a2cda31e1840a2a3/vendor/gst-curl/curltask.h",
+          "sha256": "7f1345be5a02f64e31c60c18c4efd7adff4a27707451ccbf136808d296cccbc8",
+          "dest": "vendor/gst-curl"
+        },
+        {
+          "type": "file",
+          "url": "https://raw.githubusercontent.com/enz1m/enzui/7275e9a2e99ad0ca9342c179a2cda31e1840a2a3/vendor/gst-curl/gstcurldefaults.h",
+          "sha256": "aa2f2b5d93dec5e4fa01f2bf7461d3bb5e172eb72353090a696769f2b1fbebb9",
+          "dest": "vendor/gst-curl"
+        },
+        {
+          "type": "file",
+          "url": "https://raw.githubusercontent.com/enz1m/enzui/7275e9a2e99ad0ca9342c179a2cda31e1840a2a3/vendor/gst-curl/gstcurlhttpsrc.c",
+          "sha256": "0d98ec1340d2925e47522535c5bc2b502aeddfd4f2294a6c5ec04aa3b3bb3449",
+          "dest": "vendor/gst-curl"
+        },
+        {
+          "type": "file",
+          "url": "https://raw.githubusercontent.com/enz1m/enzui/7275e9a2e99ad0ca9342c179a2cda31e1840a2a3/vendor/gst-curl/gstcurlhttpsrc.h",
+          "sha256": "939de61e58a61e1da2c59c90919f792c16daf95433cd84a7533f705d964026ef",
+          "dest": "vendor/gst-curl"
+        },
+        {
+          "type": "file",
+          "url": "https://raw.githubusercontent.com/enz1m/enzui/7275e9a2e99ad0ca9342c179a2cda31e1840a2a3/vendor/gst-curl/gstcurlqueue.c",
+          "sha256": "7969732900f1471c0bb97ee2b91be3a0e6574643e47b8dc70e774ce2b586d7fb",
+          "dest": "vendor/gst-curl"
+        },
+        {
+          "type": "file",
+          "url": "https://raw.githubusercontent.com/enz1m/enzui/7275e9a2e99ad0ca9342c179a2cda31e1840a2a3/vendor/gst-curl/gstcurlqueue.h",
+          "sha256": "79d4f47039fd10fcf6cd5df148ecfa5cec83bd96da8f59596f283c680d5a5452",
+          "dest": "vendor/gst-curl"
+        },
+        {
+          "type": "file",
+          "url": "https://raw.githubusercontent.com/enz1m/enzui/7275e9a2e99ad0ca9342c179a2cda31e1840a2a3/vendor/gst-curl/LICENSE-MIT",
+          "sha256": "2d0aca3b536e1a2b45061c368cffe4a388aa75f3baa1dfc93636dba8945de78a",
+          "dest": "vendor/gst-curl"
+        },
+        {
+          "type": "file",
+          "url": "https://raw.githubusercontent.com/enz1m/enzui/7275e9a2e99ad0ca9342c179a2cda31e1840a2a3/vendor/gst-curl/UPSTREAM.json",
+          "sha256": "10a2d7dec4d14f642a8c3840b56e958b9a7c676a9855bb9c60c35affbc5d79a2",
+          "dest": "vendor/gst-curl"
+        }
+      ]
+    }
+  ],
+  "cleanup": [
+    "/include",
+    "/lib/pkgconfig",
+    "/lib/cmake",
+    "*.la",
+    "*.a"
+  ]
+}

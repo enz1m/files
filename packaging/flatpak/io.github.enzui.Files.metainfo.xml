@@ -1,0 +1,40 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<component type="desktop-application">
+  <id>io.github.enzui.Files</id>
+  <name>Files</name>
+  <summary>Browse files and manage downloads</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <developer id="io.github.enzui">
+    <name>enzUI contributors</name>
+  </developer>
+  <description>
+    <p>Files browses local folders, network shares and devices, manages files, and downloads HTTP, HTTPS and torrent resources.</p>
+  </description>
+  <launchable type="desktop-id">io.github.enzui.Files.desktop</launchable>
+  <icon type="stock">io.github.enzui.Files</icon>
+  <provides>
+    <binary>files-app</binary>
+  </provides>
+  <categories>
+    <category>System</category>
+    <category>FileTools</category>
+    <category>FileManager</category>
+  </categories>
+  <content_rating type="oars-1.1" />
+  <releases>
+    <release version="0.1.1" date="2026-11-20">
+      <description>
+        <p>Add Flatpak packaging for enzim Apps.</p>
+      </description>
+    </release>
+    <release version="0.1.0" date="2026-11-17" />
+  </releases>
+  <url type="homepage">https://github.com/enz1m/files</url>
+  <url type="bugtracker">https://github.com/enz1m/files/issues</url>
+  <screenshots>
+    <screenshot type="default">
+      <image>https://raw.githubusercontent.com/enz1m/files/63b962ed7333b8723efa45a91fdb000188258cdf/docs/screenshots/basic-dark.png</image>
+    </screenshot>
+  </screenshots>
+</component>
