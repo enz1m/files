@@ -93,38 +93,35 @@ impl FileKind {
     }
 }
 
-// `(dev, ino, kind)` identity from [`std::fs::symlink_metadata`],
-// re-verified before any inverse mutates the filesystem.
+// Birth time distinguishes a replacement when the filesystem reuses an inode.
+// It remains stable when the original entry is renamed.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct InodeIdent {
     pub(crate) dev: u64,
     pub(crate) ino: u64,
     pub(crate) kind: FileKind,
+    birth: Option<std::time::SystemTime>,
 }
 
 impl InodeIdent {
-    // Read the identity at `path` without following symlinks.
-    pub(crate) fn of(path: &Path) -> std::io::Result<Self> {
+    fn from_metadata(md: &std::fs::Metadata) -> Self {
         use std::os::unix::fs::MetadataExt;
-        let md = std::fs::symlink_metadata(path)?;
-        Ok(Self {
+        Self {
             dev: md.dev(),
             ino: md.ino(),
-            kind: FileKind::from_metadata(&md),
-        })
+            kind: FileKind::from_metadata(md),
+            birth: md.created().ok(),
+        }
     }
 
-    // Read the identity of an open descriptor via `fstat`, so a
-    // path substitution between the open and the check cannot
-    // produce a false match.
+    // Read the identity at `path` without following symlinks.
+    pub(crate) fn of(path: &Path) -> std::io::Result<Self> {
+        Ok(Self::from_metadata(&std::fs::symlink_metadata(path)?))
+    }
+
+    // Read the identity of the open entry, independent of its current path.
     pub(crate) fn from_file(file: &std::fs::File) -> std::io::Result<Self> {
-        use std::os::unix::fs::MetadataExt;
-        let md = file.metadata()?;
-        Ok(Self {
-            dev: md.dev(),
-            ino: md.ino(),
-            kind: FileKind::from_metadata(&md),
-        })
+        Ok(Self::from_metadata(&file.metadata()?))
     }
 
     #[cfg(test)]
@@ -133,6 +130,7 @@ impl InodeIdent {
             dev,
             ino,
             kind: FileKind::Regular,
+            birth: None,
         }
     }
 }
