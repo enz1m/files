@@ -1,7 +1,7 @@
 [package]
 repository = "https://github.com/enz1m/files"
 name = "files-app"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["enzUI contributors"]
 edition = "2024"
 publish = false
@@ -22,25 +22,25 @@ center = ["dep:enzui-agent", "dep:enzui-agent-app"]
 
 [dependencies]
 files-extension-sdk = { path = "extensions/sdk" }
-enzui-activity = { features = ["operation-center"], git = "https://github.com/enz1m/enzui.git", tag = "v0.2.0-alpha.1" }
-enzui-clipboard = { git = "https://github.com/enz1m/enzui.git", tag = "v0.2.0-alpha.1" }
-enzui-clipboard-runtime = { git = "https://github.com/enz1m/enzui.git", tag = "v0.2.0-alpha.1" }
-enzui-wayland = { git = "https://github.com/enz1m/enzui.git", tag = "v0.2.0-alpha.1" }
-iced = { default-features = false, features = ["wgpu", "tiny-skia", "crisp", "web-colors", "thread-pool", "linux-theme-detection", "wayland", "wayland-dlopen", "wayland-decorations", "canvas", "svg", "a11y", "tokio"], git = "https://github.com/enz1m/enzim-iced.git", rev = "a6483d7eb2f98bd568dfd4a6d5ab0228ace287d6" }
-iced_renderer = { default-features = false, git = "https://github.com/enz1m/enzim-iced.git", rev = "a6483d7eb2f98bd568dfd4a6d5ab0228ace287d6" }
-enzui-core = { features = ["accesskit", "portal-dbus", "application-dbus", "activation-native-iced"], git = "https://github.com/enz1m/enzui.git", tag = "v0.2.0-alpha.1" }
+enzui-activity = { features = ["operation-center"], git = "https://github.com/enz1m/enzui.git", tag = "v0.3.0-alpha.1" }
+enzui-clipboard = { git = "https://github.com/enz1m/enzui.git", tag = "v0.3.0-alpha.1" }
+enzui-clipboard-runtime = { git = "https://github.com/enz1m/enzui.git", tag = "v0.3.0-alpha.1" }
+enzui-wayland = { git = "https://github.com/enz1m/enzui.git", tag = "v0.3.0-alpha.1" }
+iced = { default-features = false, features = ["wgpu", "tiny-skia", "crisp", "web-colors", "thread-pool", "linux-theme-detection", "wayland", "wayland-dlopen", "wayland-decorations", "canvas", "svg", "a11y", "tokio"], git = "https://github.com/enz1m/enzim-iced.git", rev = "e36b07b591661fdb666088fc943cc0b927a2367b" }
+iced_renderer = { default-features = false, git = "https://github.com/enz1m/enzim-iced.git", rev = "e36b07b591661fdb666088fc943cc0b927a2367b" }
+enzui-core = { features = ["accesskit", "portal-dbus", "application-dbus", "activation-native-iced"], git = "https://github.com/enz1m/enzui.git", tag = "v0.3.0-alpha.1" }
 # PDF thumbnails optionally load Pdfium; full previews use Poppler/Cairo.
-enzui-services = { features = ["gstreamer", "pdf-preview", "archive", "extension-package", "desktop-icons"], git = "https://github.com/enz1m/enzui.git", tag = "v0.2.0-alpha.1" }
-enzui-security = { git = "https://github.com/enz1m/enzui.git", tag = "v0.2.0-alpha.1" }
-enzui-theme = { git = "https://github.com/enz1m/enzui.git", tag = "v0.2.0-alpha.1" }
-enzui-widgets = { features = ["portal-dbus", "application-dbus"], git = "https://github.com/enz1m/enzui.git", tag = "v0.2.0-alpha.1" }
-enzui-agent = { features = ["iced-consumer"], optional = true, git = "https://github.com/enz1m/enzui.git", tag = "v0.2.0-alpha.1" }
-enzui-agent-app = { optional = true, git = "https://github.com/enz1m/enzui.git", tag = "v0.2.0-alpha.1" }
+enzui-services = { features = ["gstreamer", "pdf-preview", "archive", "extension-package", "desktop-icons"], git = "https://github.com/enz1m/enzui.git", tag = "v0.3.0-alpha.1" }
+enzui-security = { git = "https://github.com/enz1m/enzui.git", tag = "v0.3.0-alpha.1" }
+enzui-theme = { git = "https://github.com/enz1m/enzui.git", tag = "v0.3.0-alpha.1" }
+enzui-widgets = { features = ["portal-dbus", "application-dbus"], git = "https://github.com/enz1m/enzui.git", tag = "v0.3.0-alpha.1" }
+enzui-agent = { features = ["iced-consumer"], optional = true, git = "https://github.com/enz1m/enzui.git", tag = "v0.3.0-alpha.1" }
+enzui-agent-app = { optional = true, git = "https://github.com/enz1m/enzui.git", tag = "v0.3.0-alpha.1" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-enzui-icons = { git = "https://github.com/enz1m/enzui.git", tag = "v0.2.0-alpha.1" }
+enzui-icons = { git = "https://github.com/enz1m/enzui.git", tag = "v0.3.0-alpha.1" }
 # HEIF decoding loads the host library at runtime.
-enzui-resources = { features = ["heif"], git = "https://github.com/enz1m/enzui.git", tag = "v0.2.0-alpha.1" }
+enzui-resources = { features = ["heif"], git = "https://github.com/enz1m/enzui.git", tag = "v0.3.0-alpha.1" }
 dirs = "5"
 libc = "0.2"
 rustix = { version = "1.1", features = ["fs"] }
@@ -69,9 +69,9 @@ tokio = { version = "1", default-features = false, features = ["rt", "time"] }
 serde_json = "1"
 tempfile = "3"
 futures-timer = "3"
-enzui-security = { features = ["fault-injection"], git = "https://github.com/enz1m/enzui.git", tag = "v0.2.0-alpha.1" }
-iced_runtime = { git = "https://github.com/enz1m/enzim-iced.git", rev = "a6483d7eb2f98bd568dfd4a6d5ab0228ace287d6" }
-enzui-test-support = { git = "https://github.com/enz1m/enzui.git", tag = "v0.2.0-alpha.1" }
+enzui-security = { features = ["fault-injection"], git = "https://github.com/enz1m/enzui.git", tag = "v0.3.0-alpha.1" }
+iced_runtime = { git = "https://github.com/enz1m/enzim-iced.git", rev = "e36b07b591661fdb666088fc943cc0b927a2367b" }
+enzui-test-support = { git = "https://github.com/enz1m/enzui.git", tag = "v0.3.0-alpha.1" }
 
 [patch.crates-io]
 zbus_macros = { git = "https://github.com/enz1m/enzim-zbus.git", rev = "e182645b56d15e637bb6c8144f99ebfa7f900716" }

@@ -93,7 +93,7 @@
         {
           "type": "archive",
           "url": "https://github.com/enz1m/files/releases/download/v0.1.1/files-cargo-vendor-0.1.1.tar.xz",
-          "sha256": "c577e6738469e2689ba9324fcadca45e060de83b2c8d47ddd47904d514ea7ddd",
+          "sha256": "2d9dde06c09625726ac11baabbcdb6078084d75562f91ce11fbf80a54fb52331",
           "strip-components": 1
         },
         {
