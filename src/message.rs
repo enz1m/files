@@ -766,6 +766,7 @@ pub(crate) enum Msg {
     // opened without blocking the reducer on a file or network mount.
     PreviewPrepared(Box<crate::preview::Preview>),
     PreviewMediaWake(iced::window::Id),
+    PreviewMediaFrame(iced::window::Id, Box<enzui_widgets::video::ReadyFrame>),
     PreviewMediaControl(
         iced::window::Id,
         enzui_widgets::media_controls::MediaControlsMessage,

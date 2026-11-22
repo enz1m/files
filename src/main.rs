@@ -392,6 +392,11 @@ struct App {
     // The open previews, keyed by window. Ids last only for the process, so
     // placement uses `PlacementKey` instead.
     previews: std::collections::BTreeMap<iced::window::Id, preview::Preview>,
+    // Decoded video frames of media previews, keyed by preview window. Each
+    // presenter allocates in its own window's renderer and shows the last
+    // uploaded frame until the next one is resident there.
+    preview_frames:
+        std::collections::BTreeMap<iced::window::Id, enzui_widgets::video::LatestFramePresenter>,
 
     // Persistent window geometry, keyed by [`WindowRole`].
     //

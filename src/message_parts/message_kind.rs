@@ -288,6 +288,7 @@ impl enzui_core::crash_report::MessageKind for Msg {
             Self::ActivityWindowTagged(..) => "ActivityWindowTagged",
             Self::PreviewPrepared(..) => "PreviewPrepared",
             Self::PreviewMediaWake(..) => "PreviewMediaWake",
+            Self::PreviewMediaFrame(..) => "PreviewMediaFrame",
             Self::PreviewMediaControl(..) => "PreviewMediaControl",
             Self::PreviewPdfPage(..) => "PreviewPdfPage",
             Self::PreviewPdfLoaded(..) => "PreviewPdfLoaded",

@@ -509,6 +509,7 @@ impl App {
             close_deadline: None,
             shutdown_helper: None,
             previews: std::collections::BTreeMap::new(),
+            preview_frames: std::collections::BTreeMap::new(),
             placement,
             placement_path,
             launcher: launch::default_launcher(),

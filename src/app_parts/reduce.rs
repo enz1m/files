@@ -525,6 +525,7 @@ impl App {
             Msg::PreviewSelection(..) => self.reduce_preview_selection(message),
             Msg::PreviewPrepared(..) => self.reduce_preview_prepared(message),
             Msg::PreviewMediaWake(..)
+            | Msg::PreviewMediaFrame(..)
             | Msg::PreviewMediaControl(..)
             | Msg::PreviewPdfPage(..)
             | Msg::PreviewPdfLoaded(..) => self.reduce_preview_content(message),
@@ -700,7 +701,14 @@ impl App {
     // calls.
     pub(crate) fn view_window(&self, id: iced::window::Id) -> Element<'_, Msg> {
         match self.previews.get(&id) {
-            Some(p) => view::preview::view(p, self.themes.theme(), id),
+            Some(p) => view::preview::view(
+                p,
+                self.preview_frames
+                    .get(&id)
+                    .and_then(enzui_widgets::video::LatestFramePresenter::handle),
+                self.themes.theme(),
+                id,
+            ),
             None => self.view(),
         }
     }

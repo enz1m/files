@@ -30,6 +30,7 @@ fn text_selection_id(path: &Path) -> iced::advanced::widget::Id {
 
 fn preview_body<'a>(
     item: &'a Preview,
+    frame: Option<&'a image::Handle>,
     theme: &'a EnzTheme,
     id: iced::window::Id,
 ) -> Element<'a, Msg> {
@@ -106,11 +107,7 @@ fn preview_body<'a>(
                 .height(Length::Fill)
                 .into()
         }
-        PreviewContent::Media {
-            player,
-            status,
-            frame,
-        } => {
+        PreviewContent::Media { player, status } => {
             use enzui_widgets::media_controls::enz_media_controls;
             use iced::widget::column;
             let picture: Element<'a, Msg> = if let Some(error) = &status.error {
@@ -208,10 +205,11 @@ fn preview_body<'a>(
 
 pub(crate) fn view<'a>(
     item: &'a Preview,
+    frame: Option<&'a image::Handle>,
     theme: &'a EnzTheme,
     id: iced::window::Id,
 ) -> Element<'a, Msg> {
-    enz_app_shell(move || preview_body(item, theme, id))
+    enz_app_shell(move || preview_body(item, frame, theme, id))
         .layout(ShellLayout::TitlebarContent)
         .titlebar(move || {
             enz_title_bar()

@@ -57,7 +57,6 @@ pub(crate) enum PreviewContent {
     Media {
         player: std::sync::Arc<MediaPreview>,
         status: Box<enzui_services::media::VideoStatus>,
-        frame: Option<iced::widget::image::Handle>,
     },
     // A text file, holding the first N bytes decoded lossily to UTF-8.
     Text(String),
@@ -140,7 +139,55 @@ impl MediaPreview {
         PreviewContent::Media {
             player: std::sync::Arc::new(Self { service, audio }),
             status,
-            frame: None,
         }
+    }
+}
+
+#[cfg(test)]
+mod media_frame_tests {
+    use crate::Msg;
+    use enzui_core::media::{FrameSeq, Generation, Rgba8Frame};
+    use iced::futures::{StreamExt, executor::block_on};
+    use iced_runtime::{Action, image, task};
+
+    #[test]
+    fn preview_allocates_frames_in_its_own_window() {
+        let (mut app, _) = crate::App::new();
+        let id = iced::window::Id::unique();
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("clip.mp4");
+        let item = super::Preview {
+            content: super::MediaPreview::open(&path, false),
+            path,
+            name: "clip.mp4".into(),
+            type_label: "Video".into(),
+            size_label: String::new(),
+            width: 720.0,
+        };
+        assert!(matches!(item.content, super::PreviewContent::Media { .. }));
+        let _ = app.update(Msg::PreviewWindowOpened(id, Box::new(item)));
+
+        let frame = Rgba8Frame::new(Generation::FIRST, FrameSeq(1), 2, 2, vec![0; 16]).unwrap();
+        let allocation = app
+            .preview_frames
+            .get_mut(&id)
+            .unwrap()
+            .offer(frame)
+            .unwrap();
+        let mut stream = task::into_stream(allocation).expect("an allocation task");
+        let Some(Action::Image(image::Action::AllocateIn(target, _, response))) =
+            block_on(stream.next())
+        else {
+            panic!("expected a window-specific frame allocation");
+        };
+        assert_eq!(target, id);
+
+        let _ = app.update(Msg::WindowClosed(id));
+        response.send(Err(image::Error::Unsupported)).unwrap();
+        let Some(Action::Output(ready)) = block_on(stream.next()) else {
+            panic!("the allocation did not complete");
+        };
+        let _ = app.update(Msg::PreviewMediaFrame(id, Box::new(ready)));
+        assert!(!app.preview_frames.contains_key(&id));
     }
 }

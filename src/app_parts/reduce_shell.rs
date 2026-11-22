@@ -277,6 +277,10 @@ impl App {
             return iced::window::close(id);
         }
         if let preview::PreviewContent::Media { player, .. } = &item.content {
+            self.preview_frames.insert(
+                id,
+                enzui_widgets::video::LatestFramePresenter::for_window(id),
+            );
             player.service.play();
         }
         self.previews.insert(id, *item);
@@ -408,6 +412,9 @@ impl App {
             self.model.downloads.cancel_all();
         }
         self.previews.remove(&id);
+        // Drops the shown frame's allocation; a completion still in flight
+        // finds no presenter and is ignored.
+        self.preview_frames.remove(&id);
         if self.main_window == Some(id) {
             self.main_window = None;
         }
@@ -452,11 +459,7 @@ impl App {
         match message {
             Msg::PreviewMediaWake(id) => {
                 if let Some(item) = self.previews.get_mut(&id)
-                    && let PreviewContent::Media {
-                        player,
-                        status,
-                        frame,
-                    } = &mut item.content
+                    && let PreviewContent::Media { player, status } = &mut item.content
                 {
                     let update = player.service.poll();
                     if let Some(next) = update.status {
@@ -464,14 +467,19 @@ impl App {
                     }
                     if let Some(next) = update.frame
                         && next.generation() == status.generation
+                        && let Some(frames) = self.preview_frames.get_mut(&id)
+                        && let Some(upload) = frames.offer(next)
                     {
-                        let (w, h) = (next.width(), next.height());
-                        *frame = Some(iced::widget::image::Handle::from_rgba(
-                            w,
-                            h,
-                            next.into_pixels(),
-                        ));
+                        return upload
+                            .map(move |ready| Msg::PreviewMediaFrame(id, Box::new(ready)));
                     }
+                }
+            }
+            Msg::PreviewMediaFrame(id, ready) => {
+                if let Some(frames) = self.preview_frames.get_mut(&id)
+                    && let Some(upload) = frames.ready(*ready).next_upload
+                {
+                    return upload.map(move |ready| Msg::PreviewMediaFrame(id, Box::new(ready)));
                 }
             }
             Msg::PreviewMediaControl(id, control) => {
