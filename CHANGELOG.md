@@ -2,9 +2,8 @@
 
 ## 0.1.2
 
-- Keep video previews visible between frames.
-- Explain discovery in the Network view and provide a shortcut to Settings.
-- Update enzUI and its paired iced fork for nonblocking Wayland presentation discovery.
+- Video previews stay visible between frames while you browse.
+- The Network view explains how discovery works and gives you a shortcut to the relevant Settings page.
 
 ## 0.1.0 — 2026-11-17
 

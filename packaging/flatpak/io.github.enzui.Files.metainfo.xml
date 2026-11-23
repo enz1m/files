@@ -25,9 +25,8 @@
   <releases>
     <release version="0.1.2" date="2026-11-23">
       <description>
-        <p>Keep video previews visible between frames.</p>
-        <p>Explain discovery in the Network view and provide a shortcut to Settings.</p>
-        <p>Update enzUI and its paired iced fork for nonblocking Wayland presentation discovery.</p>
+        <p>Video previews stay visible between frames while you browse.</p>
+        <p>The Network view explains how discovery works and gives you a shortcut to the relevant Settings page.</p>
       </description>
     </release>
     <release version="0.1.1" date="2026-11-20">
