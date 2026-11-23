@@ -281,6 +281,30 @@ impl App {
                 ..network::AttachState::default()
             };
             model.attach = Some(a);
+        } else if matches!(
+            open.as_str(),
+            "network-untrusted" | "network-trusted-empty" | "network-unknown-empty"
+        ) {
+            model.navigate_screen(
+                model::Screen::Network,
+                PathBuf::from(services::NETWORK_VIEW_ROOT),
+            );
+            model.network.finish_scan(
+                Ok(Vec::new()),
+                match open.as_str() {
+                    "network-untrusted" => network::DiscoveryContext {
+                        trust: network::NetworkTrustStatus::Untrusted {
+                            connection: Some("Studio Wi-Fi".to_owned()),
+                        },
+                        can_open_network_settings: true,
+                    },
+                    "network-trusted-empty" => network::DiscoveryContext {
+                        trust: network::NetworkTrustStatus::Trusted,
+                        can_open_network_settings: true,
+                    },
+                    _ => network::DiscoveryContext::default(),
+                },
+            );
         } else if open == "grid" || open == "grid-details" {
             // Capture-only: Grid view. `grid-details` also opens the inspector on
             // the first regular file, to show a video before and after its poster.
@@ -342,9 +366,10 @@ impl App {
                 model::Screen::Network,
                 PathBuf::from(services::NETWORK_VIEW_ROOT),
             );
-            model
-                .network
-                .finish_scan(Ok(network::parse_discovery(services::DISCOVERY_FIXTURE)));
+            model.network.finish_scan(
+                Ok(network::parse_discovery(services::DISCOVERY_FIXTURE)),
+                network::DiscoveryContext::default(),
+            );
         } else if open == "computer-storage"
             && std::env::var("FILES_APP_CAPTURE_SETTLED").as_deref() == Ok("1")
         {
@@ -519,6 +544,8 @@ impl App {
             ),
             mime_query: mime_query::default_query(),
             scanner: network::default_scanner(),
+            network_context_probe: network::default_context_probe(),
+            settings_opener: network::default_settings_opener(),
             mounter: network::default_mounter(),
             pin_mode: pin_mode_root,
             pin_authority: pin_authority_root,
@@ -670,6 +697,27 @@ impl App {
     #[cfg(test)]
     pub(crate) fn with_mime_query(mut self, query: mime_query::MimeQueryHandle) -> Self {
         self.mime_query = query;
+        self
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_scanner(mut self, scanner: network::ShareScannerHandle) -> Self {
+        self.scanner = scanner;
+        self
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_network_context_probe(
+        mut self,
+        probe: network::NetworkContextProbeHandle,
+    ) -> Self {
+        self.network_context_probe = probe;
+        self
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_settings_opener(mut self, opener: network::SettingsOpenerHandle) -> Self {
+        self.settings_opener = opener;
         self
     }
 

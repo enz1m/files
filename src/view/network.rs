@@ -12,12 +12,14 @@ use iced::{Element, Length};
 
 use crate::message::Msg;
 use crate::model::Model;
-use crate::network::{BackendStatus, DiscoveryState};
+use crate::network::{BackendStatus, DiscoveryState, NetworkTrustStatus};
 
 pub(crate) const TITLE: &str = "Network";
 pub(crate) const CONNECT_LABEL: &str = "Connect to Server";
 pub(crate) const DISCOVER_LABEL: &str = "Scan Network";
+pub(crate) const OPEN_SETTINGS_LABEL: &str = "Open Network Settings";
 const CONNECT_ACTION_ID: &str = "network.connect";
+const OPEN_SETTINGS_ACTION_ID: &str = "network.open-settings";
 // The Add a Cloud Drive action, on the Network and Computer headers.
 pub(crate) const ADD_CLOUD_ACTION_ID: &str = "files-add-cloud";
 pub(crate) const ADD_CLOUD_LABEL: &str = "Add Cloud Drive";
@@ -140,7 +142,7 @@ pub(crate) fn view<'a>(model: &'a Model, theme: &'a EnzTheme) -> Element<'a, Msg
     // The found servers list, as opposed to a status page about the scan.
     let discovered_list = !state.pending
         && state.operation_error.is_none()
-        && state.discovery.message().is_none()
+        && state.discovery.message_for(&state.context.trust).is_none()
         && !matches!(state.discovery, DiscoveryState::Idle);
     let body: Element<'a, Msg> = if state.pending {
         enz_status_page(if state.pending_mount {
@@ -180,16 +182,20 @@ pub(crate) fn view<'a>(model: &'a Model, theme: &'a EnzTheme) -> Element<'a, Msg
             .tone(StatusPageTone::Empty)
             .primary_action(connect_action())
             .into_element()
-    } else if let Some(message) = state.discovery.message() {
-        enz_status_page(if state.discovery.is_failure() {
+    } else if let Some(message) = state.discovery.message_for(&state.context.trust) {
+        let untrusted = !state.discovery.is_failure()
+            && matches!(state.context.trust, NetworkTrustStatus::Untrusted { .. });
+        let mut page = enz_status_page(if state.discovery.is_failure() {
             crate::i18n::tr("Network scan failed")
         } else {
-            crate::i18n::tr("No shares found")
+            state.context.trust.empty_title()
         })
         .description(message)
         .announce_heading(false)
         .icon(if state.discovery.is_failure() {
             "wifi-off"
+        } else if untrusted {
+            "shield-alert"
         } else {
             "network"
         })
@@ -198,8 +204,16 @@ pub(crate) fn view<'a>(model: &'a Model, theme: &'a EnzTheme) -> Element<'a, Msg
         } else {
             StatusPageTone::Empty
         })
-        .primary_action(connect_action())
-        .into_element()
+        .primary_action(connect_action());
+        if untrusted && state.context.can_open_network_settings {
+            page = page
+                .secondary_action(
+                    Action::new(OPEN_SETTINGS_ACTION_ID, Msg::OpenNetworkSettings)
+                        .with_label(crate::i18n::tr(OPEN_SETTINGS_LABEL)),
+                )
+                .secondary_action_kind(enzui_widgets::button::ButtonKind::Secondary);
+        }
+        page.into_element()
     } else if matches!(state.discovery, DiscoveryState::Idle) {
         workgroup_hero(
             enz_status_page(crate::i18n::tr("Browse your network"))

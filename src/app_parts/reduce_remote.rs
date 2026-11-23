@@ -339,11 +339,22 @@ impl App {
             handle.abort();
         }
         let scanner = std::sync::Arc::clone(&self.scanner);
+        let context_probe = std::sync::Arc::clone(&self.network_context_probe);
         let cancel = network::OperationCancel::default();
         let worker_cancel = cancel.clone();
         let (task, handle) = Task::perform(
-            crate::shell_work::run(move || scanner.scan_cancellable(&worker_cancel)),
-            Msg::AttachDiscovered,
+            crate::shell_work::run(move || {
+                let result = scanner.scan_cancellable(&worker_cancel);
+                let context = if matches!(&result, Ok(shares) if shares.is_empty())
+                    && !worker_cancel.is_cancelled()
+                {
+                    context_probe.probe()
+                } else {
+                    network::DiscoveryContext::default()
+                };
+                (result, context)
+            }),
+            |(result, context)| Msg::AttachDiscovered(result, context),
         )
         .abortable();
         self.network_cancel = Some(cancel);
@@ -352,12 +363,13 @@ impl App {
     }
 
     pub(crate) fn remote_attach_discovered(&mut self, message: Msg) -> Task<Msg> {
-        let Msg::AttachDiscovered(result) = message else {
+        let Msg::AttachDiscovered(result, context) = message else {
             unreachable!("misrouted message in remote_attach_discovered");
         };
         self.network_operation = None;
         self.network_cancel = None;
         if let Some(a) = &mut self.model.attach {
+            a.context = context;
             match result {
                 Ok(shares) if shares.is_empty() => {
                     a.discovered.clear();
@@ -583,11 +595,22 @@ impl App {
         }
         self.model.network.begin_scan();
         let scanner = std::sync::Arc::clone(&self.scanner);
+        let context_probe = std::sync::Arc::clone(&self.network_context_probe);
         let cancel = network::OperationCancel::default();
         let worker_cancel = cancel.clone();
         let (task, handle) = Task::perform(
-            crate::shell_work::run(move || scanner.scan_cancellable(&worker_cancel)),
-            Msg::NetworkDiscovered,
+            crate::shell_work::run(move || {
+                let result = scanner.scan_cancellable(&worker_cancel);
+                let context = if matches!(&result, Ok(shares) if shares.is_empty())
+                    && !worker_cancel.is_cancelled()
+                {
+                    context_probe.probe()
+                } else {
+                    network::DiscoveryContext::default()
+                };
+                (result, context)
+            }),
+            |(result, context)| Msg::NetworkDiscovered(result, context),
         )
         .abortable();
         self.network_cancel = Some(cancel);
@@ -596,13 +619,41 @@ impl App {
     }
 
     pub(crate) fn remote_network_discovered(&mut self, message: Msg) -> Task<Msg> {
-        let Msg::NetworkDiscovered(result) = message else {
+        let Msg::NetworkDiscovered(result, context) = message else {
             unreachable!("misrouted message in remote_network_discovered");
         };
         self.network_operation = None;
         self.network_cancel = None;
         if self.model.features.enabled(features::FeatureId::Network) {
-            self.model.network.finish_scan(result);
+            self.model.network.finish_scan(result, context);
+        }
+        Task::none()
+    }
+
+    pub(crate) fn remote_open_network_settings(&mut self, message: Msg) -> Task<Msg> {
+        let Msg::OpenNetworkSettings = message else {
+            unreachable!("misrouted message in remote_open_network_settings");
+        };
+        let opener = std::sync::Arc::clone(&self.settings_opener);
+        let activation = self.main_window.map_or_else(
+            || Task::done(None),
+            |window| iced::window::request_activation_token(window).map(Result::ok),
+        );
+        activation.then(move |token| {
+            let opener = std::sync::Arc::clone(&opener);
+            Task::perform(
+                crate::shell_work::run(move || opener.open_network_settings(token)),
+                Msg::NetworkSettingsOpened,
+            )
+        })
+    }
+
+    pub(crate) fn remote_network_settings_opened(&mut self, message: Msg) -> Task<Msg> {
+        let Msg::NetworkSettingsOpened(result) = message else {
+            unreachable!("misrouted message in remote_network_settings_opened");
+        };
+        if let Err(msg) = result {
+            self.post_status(msg, ToastTone::Error);
         }
         Task::none()
     }

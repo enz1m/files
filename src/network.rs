@@ -672,6 +672,8 @@ impl Mounter for AuthenticatingRecordingMounter {
 mod mount;
 #[path = "network/mount_ask.rs"]
 mod mount_ask;
+#[path = "network/policy.rs"]
+mod policy;
 #[path = "network/scanners.rs"]
 mod scanners;
 #[path = "network/state.rs"]
@@ -681,6 +683,10 @@ mod state;
 pub(crate) use mount::{AuthenticatedMountBackend, GioBackend, MountDriver};
 pub(crate) use mount::{MountCredentials, MountResult, Mounter, MounterHandle, default_mounter};
 pub(crate) use mount_ask::{AskedQuestion, MountAnswer, MountQuestion, question_channel};
+pub(crate) use policy::{
+    DiscoveryContext, NetworkContextProbeHandle, NetworkTrustStatus, SettingsOpenerHandle,
+    default_context_probe, default_settings_opener,
+};
 pub(crate) use scanners::default_scanner;
 pub(crate) use state::{
     AttachState, BackendStatus, DiscoveryState, NetworkState, ServiceTarget, TargetPurpose,

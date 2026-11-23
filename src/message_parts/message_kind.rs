@@ -210,6 +210,8 @@ impl enzui_core::crash_report::MessageKind for Msg {
             Self::Toast(..) => "Toast",
             Self::DiscoverNetwork => "DiscoverNetwork",
             Self::NetworkDiscovered(..) => "NetworkDiscovered",
+            Self::OpenNetworkSettings => "OpenNetworkSettings",
+            Self::NetworkSettingsOpened(..) => "NetworkSettingsOpened",
             Self::MountDiscovered(..) => "MountDiscovered",
             Self::CancelNetworkOperation => "CancelNetworkOperation",
             Self::ToggleSearch => "ToggleSearch",

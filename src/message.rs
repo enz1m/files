@@ -562,7 +562,7 @@ pub(crate) enum Msg {
     // `AttachDiscovered`.
     DiscoverSmb,
     // The share scan finished: the shares found, or why it could not run.
-    AttachDiscovered(crate::network::ScanResult),
+    AttachDiscovered(crate::network::ScanResult, crate::network::DiscoveryContext),
     // Fill the attach form from the discovered share at this index.
     AdoptDiscovered(usize),
     // Mount the composed address on a worker; the result arrives as
@@ -577,7 +577,9 @@ pub(crate) enum Msg {
     MountQuestionAnswered(crate::network::MountAnswer),
     // Scan from the Network tab (separate from the attach dialog's scan).
     DiscoverNetwork,
-    NetworkDiscovered(crate::network::ScanResult),
+    NetworkDiscovered(crate::network::ScanResult, crate::network::DiscoveryContext),
+    OpenNetworkSettings,
+    NetworkSettingsOpened(Result<(), String>),
     MountDiscovered(usize),
     CancelNetworkOperation,
 

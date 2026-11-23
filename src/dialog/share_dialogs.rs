@@ -401,7 +401,7 @@ pub(crate) fn attach<'a>(
         );
     }
     // An empty or failed scan says so; failures use the danger tone.
-    if let Some(msg) = state.discovery.message() {
+    if let Some(msg) = state.discovery.message_for(&state.context.trust) {
         let tone = if state.discovery.is_failure() {
             TextTone::Danger
         } else {

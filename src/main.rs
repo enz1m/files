@@ -425,6 +425,10 @@ struct App {
     // The SMB discovery scanner; tests inject `network::RecordingScanner`.
     scanner: network::ShareScannerHandle,
 
+    network_context_probe: network::NetworkContextProbeHandle,
+
+    settings_opener: network::SettingsOpenerHandle,
+
     // The mounter; tests inject `network::RecordingMounter` to see the composed
     // URI without running `gio`.
     mounter: network::MounterHandle,

@@ -2,7 +2,8 @@
 // app network state.
 
 use super::{
-    DiscoveredShare, MountCredentials, Mounter, NetworkProtocol, PasswordRequirement, ScanResult,
+    DiscoveredShare, DiscoveryContext, MountCredentials, Mounter, NetworkProtocol,
+    NetworkTrustStatus, PasswordRequirement, ScanResult,
 };
 use enzui_core::form::SecretText;
 
@@ -65,6 +66,7 @@ pub(crate) struct AttachState {
     // The outcome of the last Discover run; an empty network and a broken scanner
     // are distinct states.
     pub(crate) discovery: DiscoveryState,
+    pub(crate) context: DiscoveryContext,
     // Set when the form answers the mount service's password request for an
     // existing location, which is then mounted by id rather than by address.
     pub(crate) service_target: Option<ServiceTarget>,
@@ -120,6 +122,7 @@ pub(crate) enum DiscoveryState {
 pub(crate) struct NetworkState {
     pub(crate) discovered: Vec<DiscoveredShare>,
     pub(crate) discovery: DiscoveryState,
+    pub(crate) context: DiscoveryContext,
     pub(crate) backend: BackendStatus,
     pub(crate) pending: bool,
     pub(crate) pending_mount: bool,
@@ -131,6 +134,7 @@ impl Default for NetworkState {
         Self {
             discovered: Vec::new(),
             discovery: DiscoveryState::Idle,
+            context: DiscoveryContext::default(),
             backend: BackendStatus::Ready,
             pending: false,
             pending_mount: false,
@@ -145,12 +149,14 @@ impl NetworkState {
         self.pending_mount = false;
         self.backend = BackendStatus::Working;
         self.discovery = DiscoveryState::Idle;
+        self.context = DiscoveryContext::default();
         self.operation_error = None;
     }
 
-    pub(crate) fn finish_scan(&mut self, result: ScanResult) {
+    pub(crate) fn finish_scan(&mut self, result: ScanResult, context: DiscoveryContext) {
         self.pending = false;
         self.pending_mount = false;
+        self.context = context;
         match result {
             Ok(shares) if shares.is_empty() => {
                 self.discovered.clear();
@@ -181,12 +187,10 @@ impl NetworkState {
 
 impl DiscoveryState {
     // The line for a scan that found nothing or failed; `None` when idle or listing.
-    pub(crate) fn message(&self) -> Option<String> {
+    pub(crate) fn message_for(&self, trust: &NetworkTrustStatus) -> Option<String> {
         match self {
             DiscoveryState::Idle | DiscoveryState::Found => None,
-            DiscoveryState::Empty => {
-                Some(crate::i18n::tr("No network shares found on this network.").to_owned())
-            }
+            DiscoveryState::Empty => Some(trust.empty_description()),
             DiscoveryState::Failed(reason) => Some(reason.clone()),
         }
     }
@@ -212,6 +216,7 @@ impl Default for AttachState {
             discovered: Vec::new(),
             backend: BackendStatus::Ready,
             discovery: DiscoveryState::Idle,
+            context: DiscoveryContext::default(),
             service_target: None,
             service: false,
             auto_connect: false,

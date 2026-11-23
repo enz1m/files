@@ -670,6 +670,8 @@ impl App {
             }
             Msg::DiscoverNetwork => self.remote_discover_network(message),
             Msg::NetworkDiscovered(..) => self.remote_network_discovered(message),
+            Msg::OpenNetworkSettings => self.remote_open_network_settings(message),
+            Msg::NetworkSettingsOpened(..) => self.remote_network_settings_opened(message),
             Msg::MountDiscovered(..) => self.remote_mount_discovered(message),
             Msg::CancelNetworkOperation => self.remote_cancel_network_operation(message),
 
