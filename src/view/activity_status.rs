@@ -128,6 +128,7 @@ pub(crate) fn view<'a>(
     .id(iced::advanced::widget::Id::new(ACTIVITY_STATUS_ID))
     .icon(icon)
     .count(percent)
+    .show_highlight(false)
     .tokens(tokens)
     .sizing(theme.sizing)
     .into_element();
