@@ -345,7 +345,7 @@ impl App {
         let (task, handle) = Task::perform(
             crate::shell_work::run(move || {
                 let result = scanner.scan_cancellable(&worker_cancel);
-                let context = if matches!(&result, Ok(shares) if shares.is_empty())
+                let context = if !matches!(&result, Ok(shares) if !shares.is_empty())
                     && !worker_cancel.is_cancelled()
                 {
                     context_probe.probe()
@@ -601,7 +601,7 @@ impl App {
         let (task, handle) = Task::perform(
             crate::shell_work::run(move || {
                 let result = scanner.scan_cancellable(&worker_cancel);
-                let context = if matches!(&result, Ok(shares) if shares.is_empty())
+                let context = if !matches!(&result, Ok(shares) if !shares.is_empty())
                     && !worker_cancel.is_cancelled()
                 {
                     context_probe.probe()

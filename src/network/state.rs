@@ -191,6 +191,9 @@ impl DiscoveryState {
         match self {
             DiscoveryState::Idle | DiscoveryState::Found => None,
             DiscoveryState::Empty => Some(trust.empty_description()),
+            DiscoveryState::Failed(_) if trust.discovery_blocked() => {
+                Some(trust.empty_description())
+            }
             DiscoveryState::Failed(reason) => Some(reason.clone()),
         }
     }

@@ -12,7 +12,7 @@ use iced::{Element, Length};
 
 use crate::message::Msg;
 use crate::model::Model;
-use crate::network::{BackendStatus, DiscoveryState, NetworkTrustStatus};
+use crate::network::{BackendStatus, DiscoveryState};
 
 pub(crate) const TITLE: &str = "Network";
 pub(crate) const CONNECT_LABEL: &str = "Connect to Server";
@@ -169,7 +169,10 @@ pub(crate) fn view<'a>(model: &'a Model, theme: &'a EnzTheme) -> Element<'a, Msg
             .tone(StatusPageTone::Error)
             .primary_action(connect_action())
             .into_element()
-    } else if state.discovery.is_failure() && state.backend == BackendStatus::Unavailable {
+    } else if state.discovery.is_failure()
+        && state.backend == BackendStatus::Unavailable
+        && !state.context.trust.discovery_blocked()
+    {
         // Discovery is optional: without its service the page is not broken,
         // it just cannot find servers by itself.
         enz_status_page(crate::i18n::tr("Network discovery is off"))
@@ -183,23 +186,23 @@ pub(crate) fn view<'a>(model: &'a Model, theme: &'a EnzTheme) -> Element<'a, Msg
             .primary_action(connect_action())
             .into_element()
     } else if let Some(message) = state.discovery.message_for(&state.context.trust) {
-        let untrusted = !state.discovery.is_failure()
-            && matches!(state.context.trust, NetworkTrustStatus::Untrusted { .. });
-        let mut page = enz_status_page(if state.discovery.is_failure() {
+        let untrusted = state.context.trust.discovery_blocked();
+        let failed = state.discovery.is_failure() && !untrusted;
+        let mut page = enz_status_page(if failed {
             crate::i18n::tr("Network scan failed")
         } else {
             state.context.trust.empty_title()
         })
         .description(message)
         .announce_heading(false)
-        .icon(if state.discovery.is_failure() {
+        .icon(if failed {
             "wifi-off"
         } else if untrusted {
             "shield-alert"
         } else {
             "network"
         })
-        .tone(if state.discovery.is_failure() {
+        .tone(if failed {
             StatusPageTone::Error
         } else {
             StatusPageTone::Empty

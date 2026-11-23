@@ -33,6 +33,10 @@ pub(crate) enum NetworkTrustStatus {
 }
 
 impl NetworkTrustStatus {
+    pub(crate) fn discovery_blocked(&self) -> bool {
+        matches!(self, Self::Untrusted { .. })
+    }
+
     pub(crate) fn empty_title(&self) -> &'static str {
         match self {
             Self::Untrusted { .. } => crate::i18n::tr("Network discovery is blocked"),
@@ -183,14 +187,56 @@ pub(crate) fn parse_system1_network_trust(raw: &str) -> NetworkTrustStatus {
 
 async fn probe_dbus_context() -> DiscoveryContext {
     let (trust, can_open_network_settings) =
-        tokio::join!(probe_system1_trust(), detect_settings_service(),);
+        tokio::join!(probe_network_trust(), detect_settings_service());
     DiscoveryContext {
         trust,
         can_open_network_settings,
     }
 }
 
-async fn probe_system1_trust() -> NetworkTrustStatus {
+type FirewallBindings = HashMap<String, HashMap<String, Vec<String>>>;
+
+async fn firewall_bindings(
+    connection: &zbus::Connection,
+    interface: &str,
+    method: &str,
+) -> Option<FirewallBindings> {
+    let reply = tokio::time::timeout(
+        PROBE_TIMEOUT,
+        connection.call_method(
+            Some(FIREWALLD_NAME),
+            "/org/fedoraproject/FirewallD1",
+            Some(interface),
+            method,
+            &(),
+        ),
+    )
+    .await
+    .ok()?
+    .ok()?;
+    reply.body().deserialize().ok()
+}
+
+fn active_network_trust(
+    zones: &FirewallBindings,
+    policies: &FirewallBindings,
+) -> NetworkTrustStatus {
+    let has_interfaces = |zone: &str| {
+        zones
+            .get(zone)
+            .and_then(|bindings| bindings.get("interfaces"))
+            .is_some_and(|interfaces| !interfaces.is_empty())
+    };
+    if policies.contains_key("enz-mdns-trust") && has_interfaces("enzimos-trusted") {
+        NetworkTrustStatus::Trusted
+    } else if policies.contains_key("enz-mdns-block") && has_interfaces("public") {
+        NetworkTrustStatus::Untrusted { connection: None }
+    } else {
+        NetworkTrustStatus::Unknown
+    }
+}
+
+async fn probe_network_trust() -> NetworkTrustStatus {
     let Ok(Ok(connection)) = tokio::time::timeout(PROBE_TIMEOUT, zbus::Connection::system()).await
     else {
         return NetworkTrustStatus::Unknown;
@@ -198,18 +244,42 @@ async fn probe_system1_trust() -> NetworkTrustStatus {
     let Ok(bus) = zbus::fdo::DBusProxy::new(&connection).await else {
         return NetworkTrustStatus::Unknown;
     };
-    let Ok(firewalld) = zbus::names::BusName::try_from(FIREWALLD_NAME) else {
+    let Ok(firewall) = zbus::names::BusName::try_from(FIREWALLD_NAME) else {
         return NetworkTrustStatus::Unknown;
     };
-    // Trust zones only restrict discovery while firewalld owns its bus name.
-    let firewalld_running = tokio::time::timeout(PROBE_TIMEOUT, bus.name_has_owner(firewalld))
-        .await
-        .ok()
-        .and_then(Result::ok)
-        .unwrap_or(false);
-    if !firewalld_running {
+    if !matches!(
+        tokio::time::timeout(PROBE_TIMEOUT, bus.name_has_owner(firewall)).await,
+        Ok(Ok(true))
+    ) {
         return NetworkTrustStatus::Unknown;
     }
+    let (zones, policies) = tokio::join!(
+        firewall_bindings(
+            &connection,
+            "org.fedoraproject.FirewallD1.zone",
+            "getActiveZones"
+        ),
+        firewall_bindings(
+            &connection,
+            "org.fedoraproject.FirewallD1.policy",
+            "getActivePolicies"
+        ),
+    );
+    let (Some(zones), Some(policies)) = (zones, policies) else {
+        return NetworkTrustStatus::Unknown;
+    };
+    let trust = active_network_trust(&zones, &policies);
+    if trust.discovery_blocked()
+        && let name @ NetworkTrustStatus::Untrusted {
+            connection: Some(_),
+        } = probe_system1_trust(&connection).await
+    {
+        return name;
+    }
+    trust
+}
+
+async fn probe_system1_trust(connection: &zbus::Connection) -> NetworkTrustStatus {
     let body = r#"{"schema":1,"query":"network-trust"}"#;
     let Ok(Ok(reply)) = tokio::time::timeout(
         PROBE_TIMEOUT,
@@ -293,6 +363,26 @@ mod tests {
     use super::*;
     use iced::futures::{StreamExt, executor::block_on};
     use iced_runtime::{Action, task, window};
+
+    #[test]
+    fn reports_public_discovery_block_only_when_the_policy_is_active() {
+        let public = HashMap::from([(
+            "public".to_owned(),
+            HashMap::from([("interfaces".to_owned(), vec!["wlan0".to_owned()])]),
+        )]);
+        let mut policies = HashMap::new();
+        assert_eq!(
+            active_network_trust(&public, &policies),
+            NetworkTrustStatus::Unknown
+        );
+        policies.insert("enz-mdns-block".to_owned(), HashMap::new());
+        let trust = active_network_trust(&public, &policies);
+        assert_eq!(trust, NetworkTrustStatus::Untrusted { connection: None });
+        assert_eq!(
+            crate::network::DiscoveryState::Failed("Could not scan".to_owned()).message_for(&trust),
+            Some(trust.empty_description()),
+        );
+    }
 
     #[test]
     fn parses_untrusted_active_wifi_connection() {
@@ -426,7 +516,10 @@ mod tests {
 
     impl SettingsOpener for RecordingOpener {
         fn open_network_settings(&self, token: Option<ActivationToken>) -> Result<(), String> {
-            self.tokens.lock().unwrap().push(token);
+            self.tokens
+                .lock()
+                .map_err(|error| error.to_string())?
+                .push(token);
             Ok(())
         }
     }
