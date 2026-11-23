@@ -168,7 +168,7 @@ impl App {
                 .and_then(|location| location.service.as_ref()?.detail.clone());
             dialog::unlock(self.themes.theme(), state, detail, window)
         } else if let Some(state) = &self.model.location_dialog {
-            dialog::location(self.themes.theme(), state, window)
+            dialog::location(self.themes.theme(), state, &self.model, window)
         } else if let Some(state) = &self.model.format {
             dialog::format(self.themes.theme(), state, window)
         } else if let Some(state) = &self.model.cloud {

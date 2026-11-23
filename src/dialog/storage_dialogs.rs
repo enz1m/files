@@ -480,36 +480,10 @@ pub(crate) fn connect_to_server<'a>(
     .on_submit(Msg::ConfirmAttach)
     .id_prefix("files-app-connect-address")
     .into_element();
-    let startup = state.can_mount_at_boot();
-    let options = enz_preferences_group(
-        column![
-            enz_preferences_row(crate::i18n::tr("Connect at login"))
-                .subtitle(crate::i18n::tr("Reconnect whenever you log in."))
-                .switch(state.auto_connect, Msg::SetAttachAutoConnect)
-                .id_prefix("files-app-connect-login")
-                .into_element(),
-            enz_preferences_row(crate::i18n::tr("Mount at startup"))
-                .subtitle(if startup {
-                    crate::i18n::tr(
-                        "Before anyone logs in, for every account. Asks for administrator \
-                         approval.",
-                    )
-                } else {
-                    crate::i18n::tr("For SMB shares and NFS exports.")
-                })
-                .switch(state.mount_at_boot && startup, Msg::SetAttachMountAtBoot)
-                .enabled(startup)
-                .id_prefix("files-app-connect-startup")
-                .into_element(),
-        ]
-        .width(Length::Fill),
-    )
-    .bordered(true)
-    .into_element();
     present(
         theme,
         crate::i18n::tr(CONNECT_TITLE),
-        stack(theme, vec![address, options]),
+        address,
         vec![
             quiet(crate::i18n::tr("Cancel"), Msg::CloseAttach),
             accent(crate::i18n::tr("Connect"), Msg::ConfirmAttach)
@@ -602,7 +576,9 @@ pub(crate) fn sign_in<'a>(
             .into_element(),
         );
     }
+    let changing_account = target.carry.change_account;
     let confirm = match target.purpose {
+        TargetPurpose::Mount if changing_account => crate::i18n::tr("Sign In and Open"),
         TargetPurpose::Mount => crate::i18n::tr("Connect"),
         TargetPurpose::MountAtBoot => crate::i18n::tr("Continue"),
     };
@@ -612,7 +588,10 @@ pub(crate) fn sign_in<'a>(
         stack(theme, items),
         vec![
             quiet(crate::i18n::tr("Cancel"), Msg::CloseAttach),
-            accent(confirm, Msg::ConfirmAttach).enabled(!state.password.expose_secret().is_empty()),
+            accent(confirm, Msg::ConfirmAttach).enabled(
+                !state.password.expose_secret().is_empty()
+                    && (!changing_account || !state.username.trim().is_empty()),
+            ),
         ],
         window,
     )
@@ -693,7 +672,7 @@ pub(crate) fn unlock<'a>(
 pub(crate) fn location_title(dialog: &LocationDialog) -> &'static str {
     match dialog {
         LocationDialog::Rename { .. } => crate::i18n::tr("Rename Location"),
-        LocationDialog::ChooseShare { .. } => crate::i18n::tr("Choose a Share"),
+        LocationDialog::ShareSettings { .. } => crate::i18n::tr("Share Settings"),
         LocationDialog::Confirm { confirmation, .. } => match confirmation {
             Confirmation::Smb1 { .. } => crate::i18n::tr("Use an Older Protocol?"),
             Confirmation::Force { .. } => crate::i18n::tr("Files Are Still Open"),
@@ -702,9 +681,138 @@ pub(crate) fn location_title(dialog: &LocationDialog) -> &'static str {
     }
 }
 
+fn share_settings<'a>(
+    theme: &EnzTheme,
+    model: &'a crate::model::Model,
+    location: &'a crate::storage::Location,
+) -> Option<Element<'a, Msg>> {
+    use crate::i18n::tr;
+    use crate::mount_service::{ConnectionTiming, LocationAction, smb_account};
+    use enzui_widgets::radio_group::{Orientation, enz_radio_group};
+
+    let service = location.service.as_ref()?;
+    let id = &location.id;
+    let uri = service.uri.as_deref().unwrap_or_default();
+    let address = uri.split_once("://").map_or_else(
+        || uri.to_owned(),
+        |(scheme, rest)| {
+            let (authority, path) = rest.split_once('/').unwrap_or((rest, ""));
+            let server = authority
+                .rsplit_once('@')
+                .map_or(authority, |(_, server)| server);
+            format!("{scheme}://{server}/{path}")
+        },
+    );
+    let mut items = vec![subject(
+        theme,
+        "network",
+        location.name.clone(),
+        Some(address),
+    )];
+    let busy = service.busy || model.storage_busy.contains(id);
+    if let Some((account, domain)) = smb_account(uri) {
+        let guest = account.is_empty();
+        let identity = if guest {
+            tr("Guest access").to_owned()
+        } else if domain.is_empty() {
+            account
+        } else {
+            format!("{domain}\\{account}")
+        };
+        let action = if guest {
+            tr("Sign in with an account")
+        } else {
+            tr("Change account")
+        };
+        let detail = if service.mount_at_boot {
+            tr("Choose a different connection time before changing the account used at startup.")
+        } else if location.mount.is_some() {
+            tr("Changing accounts reconnects the share. Close any open files first.")
+        } else {
+            tr("Write access depends on the permissions of your account on the server.")
+        };
+        let mut rows = iced::widget::column![
+            enz_preferences_row(tr("Account"))
+                .subtitle(identity)
+                .action(
+                    action,
+                    Msg::LocationAction(id.clone(), LocationAction::ChangeAccount)
+                )
+                .enabled(!busy && !service.mount_at_boot)
+                .id_prefix("files-share-account")
+                .into_element()
+        ]
+        .width(Length::Fill);
+        if !guest && service.can_remember_password {
+            rows = rows.push(
+                enz_preferences_row(tr("Saved password"))
+                    .action(
+                        tr("Forget"),
+                        Msg::LocationAction(id.clone(), LocationAction::ForgetPassword),
+                    )
+                    .enabled(!busy)
+                    .id_prefix("files-share-password")
+                    .into_element(),
+            );
+        }
+        items.push(enz_preferences_group(rows).bordered(true).into_element());
+        let detail = if guest && location.mount.is_some() && !service.mount_at_boot {
+            format!(
+                "{} {detail}",
+                tr("Write access depends on the permissions of your account on the server.")
+            )
+        } else {
+            detail.to_owned()
+        };
+        items.push(enz_text(detail).tone(TextTone::Muted).into_element());
+    }
+
+    let options = crate::i18n::radio_labels("share-timing");
+    let startup = service.can_mount_at_boot || service.mount_at_boot;
+    let selected = ConnectionTiming::OPTIONS
+        .iter()
+        .position(|timing| *timing == ConnectionTiming::current(service));
+    items.push(
+        enz_radio_group(
+            tr("Connect this share"),
+            if startup { options } else { &options[..2] },
+            selected,
+            move |index| {
+                Msg::LocationAction(
+                    id.clone(),
+                    LocationAction::SetConnectionTiming(ConnectionTiming::OPTIONS[index]),
+                )
+            },
+        )
+        .orientation(Orientation::Vertical)
+        .enabled(!busy)
+        .option_id_prefix("files-share-timing")
+        .into_element(),
+    );
+    if startup {
+        items.push(
+            enz_text(tr("System startup connects before anyone signs in and requires administrator approval."))
+                .tone(TextTone::Muted)
+                .into_element(),
+        );
+    }
+    items.push(
+        enz_preferences_row(tr("Display name"))
+            .action(
+                tr("Rename"),
+                Msg::LocationAction(id.clone(), LocationAction::Rename),
+            )
+            .enabled(!busy)
+            .id_prefix("files-share-label")
+            .into_element(),
+    );
+    Some(stack(theme, items))
+}
+
 pub(crate) fn location<'a>(
     theme: &EnzTheme,
     dialog: &'a LocationDialog,
+    model: &'a crate::model::Model,
     window: Size,
 ) -> Element<'a, Msg> {
     let cancel = quiet(crate::i18n::tr("Cancel"), Msg::CloseLocationDialog);
@@ -730,42 +838,19 @@ pub(crate) fn location<'a>(
                     .enabled(!name.trim().is_empty()),
             ],
         ),
-        LocationDialog::ChooseShare { name, shares, .. } => {
-            let mut items = vec![subject(
-                theme,
-                "server",
-                name.clone(),
-                Some(crate::i18n::tr("Choose the shared folder to connect to.").to_owned()),
-            )];
-            if shares.is_empty() {
-                items.push(
-                    enz_text(crate::i18n::tr("The server lists no shares you can open."))
-                        .tone(TextTone::Muted)
-                        .into_element(),
-                );
-            } else {
-                let rows: Vec<Element<'a, Msg>> = shares
-                    .iter()
-                    .enumerate()
-                    .map(|(index, share)| {
-                        let mut row = enz_preferences_row(&share.name).icon("folder");
-                        if !share.comment.is_empty() {
-                            row = row.subtitle(&share.comment);
-                        }
-                        row.action("", Msg::LocationShareChosen(index))
-                            .id_prefix(format!("files-app-share-{index}"))
-                            .into_element()
-                    })
-                    .collect();
-                items.push(
-                    enz_preferences_group(
-                        iced::widget::Column::with_children(rows).width(Length::Fill),
-                    )
-                    .bordered(true)
-                    .into_element(),
-                );
-            }
-            (stack(theme, items), vec![cancel])
+        LocationDialog::ShareSettings { id } => {
+            let body = model
+                .storage_locations
+                .iter()
+                .find(|location| location.id == *id)
+                .and_then(|location| share_settings(theme, model, location))
+                .unwrap_or_else(|| {
+                    enz_text(crate::i18n::tr("This share is no longer available.")).into_element()
+                });
+            (
+                body,
+                vec![accent(crate::i18n::tr("Done"), Msg::CloseLocationDialog)],
+            )
         }
         LocationDialog::Confirm {
             name, confirmation, ..

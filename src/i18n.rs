@@ -121,6 +121,12 @@ pub(crate) fn radio_labels(group: &'static str) -> &'static [&'static str] {
                         crate::bulk_rename::BULK_RENAME_MODE_LABELS.map(tr).to_vec(),
                     );
                     labels.insert(
+                        (tag, "share-timing"),
+                        crate::mount_service::ConnectionTiming::OPTIONS
+                            .map(|timing| tr(timing.label()))
+                            .to_vec(),
+                    );
+                    labels.insert(
                         (tag, "behavior"),
                         crate::open_with::OPEN_BEHAVIOR_LABELS.map(tr).to_vec(),
                     );

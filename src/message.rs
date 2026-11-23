@@ -310,7 +310,6 @@ pub(crate) enum Msg {
         // The choices of a connection, for the prompts that retry it.
         plan: Option<crate::mount_service::ConnectPlan>,
         // Mounting at startup could not be set up after a successful mount.
-        boot: Option<crate::mount_service::ServiceError>,
     },
     // Right-click on a mount service network location.
     OpenLocationContextMenu(String, iced::Point),
@@ -556,9 +555,6 @@ pub(crate) enum Msg {
     ToggleAttachPasswordRevealed,
     // Keep the attach password in the keyring.
     SetAttachRememberPassword(bool),
-    // Mount service connections: reconnect at login, mount at startup.
-    SetAttachAutoConnect(bool),
-    SetAttachMountAtBoot(bool),
     // Scan for SMB shares on a worker; the result arrives as
     // `AttachDiscovered`.
     DiscoverSmb,

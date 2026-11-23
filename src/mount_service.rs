@@ -91,6 +91,7 @@ struct Snapshot {
 struct Capabilities {
     // The cloud services that can be added; unknown names are skipped.
     cloud: Vec<String>,
+    keyring: bool,
 }
 
 // The service's inventory: its locations and the cloud services it can add.
@@ -199,6 +200,7 @@ struct Item {
 pub(crate) fn inventory(snapshot: &str) -> Result<Inventory, String> {
     let snapshot: Snapshot = serde_json::from_str(snapshot)
         .map_err(|_| crate::i18n::tr("The storage inventory was invalid").to_owned())?;
+    let keyring = snapshot.capabilities.keyring;
     let mut cloud: Vec<CloudProvider> = snapshot
         .capabilities
         .cloud
@@ -212,7 +214,7 @@ pub(crate) fn inventory(snapshot: &str) -> Result<Inventory, String> {
                 .items
                 .into_iter()
                 .filter(|item| !item.id.is_empty())
-                .map(location)
+                .map(|item| location(item, keyring))
                 .collect(),
         ),
         cloud,
@@ -223,7 +225,7 @@ pub(crate) fn locations(snapshot: &str) -> Result<Vec<Location>, String> {
     inventory(snapshot).map(|inventory| inventory.locations)
 }
 
-fn location(item: Item) -> Location {
+fn location(item: Item, keyring: bool) -> Location {
     let kind = match item.kind.as_str() {
         "usb" | "card" => Kind::Usb,
         "optical" => Kind::Optical,
@@ -265,6 +267,7 @@ fn location(item: Item) -> Location {
             not_responding,
             busy: matches!(item.state.as_str(), "mounting" | "unmounting"),
             uri: item.uri,
+            can_remember_password: keyring,
             reason,
             saved: item.saved,
             auto_connect: item.auto_connect,
@@ -602,10 +605,9 @@ pub(crate) async fn trust_host_key(
 }
 
 // Adds (or finds) the saved network location for `uri` and returns its id.
-pub(crate) async fn add_location(uri: String, auto_connect: bool) -> Result<String, ServiceError> {
+pub(crate) async fn add_location(uri: String) -> Result<String, ServiceError> {
     let mut options = std::collections::HashMap::new();
     options.insert("save", zbus::zvariant::Value::from(true));
-    options.insert("auto_connect", zbus::zvariant::Value::from(auto_connect));
     call::<_, String>("AddLocation", &(uri.as_str(), "", options)).await
 }
 
@@ -673,51 +675,26 @@ pub(crate) struct Login {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct ConnectPlan {
     pub(crate) login: Option<Login>,
+    pub(crate) change_account: bool,
     pub(crate) remember: bool,
-    pub(crate) auto_connect: bool,
-    pub(crate) mount_at_boot: bool,
-    // A server location this connection was started from, removed once a
-    // share of it is mounted.
-    pub(crate) replaces_server: Option<String>,
     // The connection saved a location that was not there before.
     pub(crate) new_location: bool,
 }
 
-// Mounts `id` as planned: with the typed password if there is one, then
-// mounting at startup when asked. A failure to set up the startup mount does
-// not undo the mount; it is returned beside the folder.
-pub(crate) async fn mount_planned(
-    id: String,
-    plan: ConnectPlan,
-) -> Result<(PathBuf, Option<ServiceError>), ServiceError> {
-    let typed = plan.login.filter(|login| !login.password.is_empty());
-    let path = match &typed {
+pub(crate) async fn mount_planned(id: String, plan: ConnectPlan) -> Result<PathBuf, ServiceError> {
+    match plan.login.filter(|login| !login.password.is_empty()) {
         Some(login) => {
             mount_with_credentials(
-                id.clone(),
-                login.username.clone(),
-                login.domain.clone(),
-                login.password.clone(),
+                id,
+                login.username,
+                login.domain,
+                login.password,
                 plan.remember,
             )
-            .await?
-        }
-        None => mount(id.clone()).await?,
-    };
-    if let Some(server) = plan.replaces_server.filter(|server| *server != id) {
-        // The bare server entry only led here; a share mount supersedes it.
-        let _ = remove_location(server).await;
-    }
-    let boot = if plan.mount_at_boot {
-        // The typed password, when there is one: a password being remembered
-        // may not have reached the keyring yet.
-        set_mount_at_boot(id, true, typed.map(|login| login.password))
             .await
-            .err()
-    } else {
-        None
-    };
-    Ok((path, boot))
+        }
+        None => mount(id).await,
+    }
 }
 
 // SMB servers found by mDNS and WS-Discovery; mounting one lists its shares.
@@ -744,24 +721,6 @@ pub(crate) async fn discover() -> Result<Vec<crate::network::DiscoveredShare>, S
     servers.sort_by(|a, b| a.host.cmp(&b.host));
     servers.dedup();
     Ok(servers)
-}
-
-// Whether `address` names an SMB share or an NFS export, which the service
-// can mount at startup.
-pub(crate) fn can_mount_at_boot(address: &str) -> bool {
-    let address = address.trim();
-    if address.starts_with("nfs://") {
-        return true;
-    }
-    let path = if let Some(rest) = address.strip_prefix("smb://") {
-        let rest = rest.rsplit_once('@').map_or(rest, |(_, host)| host);
-        rest.split('/').filter(|part| !part.is_empty()).count()
-    } else if let Some(rest) = address.strip_prefix("\\\\") {
-        rest.split('\\').filter(|part| !part.is_empty()).count()
-    } else {
-        0
-    };
-    path >= 2
 }
 
 // Runs a service future on a private runtime, for the blocking callers that
@@ -907,6 +866,9 @@ pub(crate) enum LocationAction {
     // Detach a mount whose server stopped answering.
     ForceDisconnect,
     Rename,
+    ShareSettings,
+    ChangeAccount,
+    SetConnectionTiming(ConnectionTiming),
     SetAutoConnect(bool),
     SetMountAtBoot(bool),
     ForgetPassword,
@@ -927,6 +889,9 @@ impl LocationAction {
             Self::Disconnect => crate::i18n::tr("Disconnect"),
             Self::ForceDisconnect => crate::i18n::tr("Disconnect Anyway"),
             Self::Rename => crate::i18n::tr("Rename…"),
+            Self::ShareSettings => crate::i18n::tr("Share Settings"),
+            Self::ChangeAccount => crate::i18n::tr("Change account"),
+            Self::SetConnectionTiming(timing) => crate::i18n::tr(timing.label()),
             Self::SetAutoConnect(_) => crate::i18n::tr("Connect at Login"),
             Self::SetMountAtBoot(_) => crate::i18n::tr("Mount at Startup"),
             Self::ForgetPassword => crate::i18n::tr("Forget Password"),
@@ -946,7 +911,8 @@ impl LocationAction {
             Self::Connect => "plug",
             Self::Disconnect | Self::ForceDisconnect => "unplug",
             Self::Rename => "pencil",
-            Self::SetAutoConnect(_) => "log-in",
+            Self::ShareSettings | Self::SetConnectionTiming(_) => "settings",
+            Self::ChangeAccount | Self::SetAutoConnect(_) => "log-in",
             Self::SetMountAtBoot(_) => "power",
             Self::ForgetPassword => "key-round",
             Self::Remove => "trash-2",
@@ -970,8 +936,6 @@ impl LocationAction {
     }
 }
 
-// The context menu commands for a mount service location, in menu order;
-// toggles carry the value they switch to.
 pub(crate) fn location_actions(location: &Location) -> Vec<LocationAction> {
     let Some(service) = location.service.as_ref() else {
         return Vec::new();
@@ -1032,14 +996,61 @@ fn connection_actions(location: &Location, service: &ServiceItem) -> Vec<Locatio
 
 fn network_actions(location: &Location, service: &ServiceItem) -> Vec<LocationAction> {
     let mut actions = connection_actions(location, service);
-    actions.push(LocationAction::Rename);
-    actions.push(LocationAction::SetAutoConnect(!service.auto_connect));
-    if service.can_mount_at_boot || service.mount_at_boot {
-        actions.push(LocationAction::SetMountAtBoot(!service.mount_at_boot));
-    }
-    actions.push(LocationAction::ForgetPassword);
+    actions.push(LocationAction::ShareSettings);
     actions.push(LocationAction::Remove);
     actions
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ConnectionTiming {
+    OnDemand,
+    AtSignIn,
+    AtStartup,
+}
+
+impl ConnectionTiming {
+    pub(crate) const OPTIONS: [Self; 3] = [Self::OnDemand, Self::AtSignIn, Self::AtStartup];
+
+    pub(crate) fn current(service: &ServiceItem) -> Self {
+        if service.mount_at_boot {
+            Self::AtStartup
+        } else if service.auto_connect {
+            Self::AtSignIn
+        } else {
+            Self::OnDemand
+        }
+    }
+
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            Self::OnDemand => "When opened",
+            Self::AtSignIn => "When I sign in",
+            Self::AtStartup => "When the computer starts",
+        }
+    }
+}
+
+pub(crate) fn smb_authority(uri: &str) -> Option<(&str, Option<&str>, &str)> {
+    let rest = uri.strip_prefix("smb://")?;
+    let (authority, path) = rest.split_once('/').unwrap_or((rest, ""));
+    let (server, account) = authority
+        .rsplit_once('@')
+        .map_or((authority, None), |(account, server)| {
+            (server, Some(account))
+        });
+    Some((server, account, path.trim_end_matches('/')))
+}
+
+pub(crate) fn smb_account(uri: &str) -> Option<(String, String)> {
+    let (_, account, _) = smb_authority(uri)?;
+    let account = account.unwrap_or_default();
+    let (domain, name) = account.split_once(';').unwrap_or(("", account));
+    let decode = |part: &str| {
+        percent_encoding::percent_decode_str(part)
+            .decode_utf8_lossy()
+            .into_owned()
+    };
+    Some((decode(name), decode(domain)))
 }
 
 // A small dialog about one network location.
@@ -1049,13 +1060,8 @@ pub(crate) enum LocationDialog {
         id: String,
         name: String,
     },
-    // The server location `server` has these shares; picking one connects
-    // to it with `plan`.
-    ChooseShare {
-        server: String,
-        name: String,
-        shares: Vec<ShareChoice>,
-        plan: ConnectPlan,
+    ShareSettings {
+        id: String,
     },
     Confirm {
         id: String,

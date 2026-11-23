@@ -4,13 +4,10 @@
 
 use super::*;
 use crate::mount_service::{
-    self as service, AfterForce, Confirmation, ConnectPlan, LocationAction, LocationDialog, Login,
-    ServiceError,
+    self as service, AfterForce, Confirmation, ConnectPlan, ConnectionTiming, LocationAction,
+    LocationDialog, Login, ServiceError,
 };
 use crate::network::{AskedQuestion, MountAnswer, MountQuestion, TargetPurpose};
-
-// A mount, with any failure to set up mounting at startup afterwards.
-type Planned = Result<(Option<PathBuf>, Option<ServiceError>), ServiceError>;
 
 fn finished(
     id: String,
@@ -18,12 +15,8 @@ fn finished(
     opening: bool,
     activity: crate::activity::FileActivity,
     plan: Option<ConnectPlan>,
-    result: Planned,
+    result: Result<Option<PathBuf>, ServiceError>,
 ) -> Msg {
-    let (result, boot) = match result {
-        Ok((path, boot)) => (Ok(path), boot),
-        Err(error) => (Err(error), None),
-    };
     Msg::MountServiceFinished {
         id,
         name,
@@ -31,7 +24,6 @@ fn finished(
         activity,
         result,
         plan,
-        boot,
     }
 }
 
@@ -51,6 +43,14 @@ impl App {
         let password_missing = !attach.password_requirement.allows_empty()
             && attach.password.expose_secret().trim().is_empty();
         let address = attach.service_address();
+        if attach
+            .service_target
+            .as_ref()
+            .is_some_and(|target| target.carry.change_account)
+            && attach.username.trim().is_empty()
+        {
+            return Task::none();
+        }
         if password_missing {
             self.post_status(crate::i18n::tr("Password required"), ToastTone::Warning);
             return Task::none();
@@ -71,7 +71,6 @@ impl App {
             password: attach.password.clone(),
         };
         let login = (!login.username.is_empty() || !login.password.is_empty()).then_some(login);
-        let mount_at_boot = attach.mount_at_boot && attach.can_mount_at_boot();
         match (attach.service_target, address) {
             (Some(target), _) => {
                 let mut plan = target.carry;
@@ -79,7 +78,19 @@ impl App {
                 match target.purpose {
                     TargetPurpose::Mount => {
                         plan.login = login;
-                        self.service_mount_planned(target.id, plan)
+                        let leave = if plan.change_account
+                            && self
+                                .storage_location(&target.id)
+                                .is_some_and(|location| location.contains(&self.model.cwd))
+                        {
+                            self.nav_navigate_screen(Msg::NavigateScreen(
+                                Screen::Network,
+                                PathBuf::from(services::NETWORK_VIEW_ROOT),
+                            ))
+                        } else {
+                            Task::none()
+                        };
+                        Task::batch([leave, self.service_mount_planned(target.id, plan)])
                     }
                     TargetPurpose::MountAtBoot => {
                         let password = login.map(|login| login.password);
@@ -98,10 +109,7 @@ impl App {
                 ConnectPlan {
                     login,
                     remember: attach.remember_password,
-                    auto_connect: attach.auto_connect || mount_at_boot,
-                    mount_at_boot,
-                    replaces_server: None,
-                    new_location: false,
+                    ..ConnectPlan::default()
                 },
             ),
             (None, None) => Task::none(),
@@ -110,12 +118,29 @@ impl App {
 
     // Saves the network location `address` with the service, then mounts it.
     pub(crate) fn service_connect(&mut self, address: String, plan: ConnectPlan) -> Task<Msg> {
+        if self.model.network.opening.is_some() {
+            return Task::none();
+        }
+        if plan.login.is_none()
+            && let Some((server, None, path)) = service::smb_authority(&address)
+            && !path.is_empty()
+            && let Some(id) = self.model.storage_locations.iter().find_map(|location| {
+                let saved = location.service.as_ref()?.uri.as_deref()?;
+                let (known_server, _, known_path) = service::smb_authority(saved)?;
+                let decode = percent_encoding::percent_decode_str;
+                (known_server.eq_ignore_ascii_case(server) && decode(known_path).eq(decode(path)))
+                    .then(|| location.id.clone())
+            })
+        {
+            return self.reduce_storage_operation(Msg::OpenStorage(id));
+        }
         let activity = self.start_service_activity(
             ActivityKind::Other("Mounting"),
             crate::i18n::format("files-mounting-uri-b9db6582", &[("uri", address.clone())]),
         );
         // Until the location is listed, its address names it.
         let name = address.clone();
+        self.model.network.opening = Some(name.clone());
         let carried = plan.clone();
         let known: std::collections::HashSet<String> = self
             .model
@@ -124,7 +149,7 @@ impl App {
             .map(|location| location.id.clone())
             .collect();
         let connect = async move {
-            let id = match service::add_location(address, plan.auto_connect).await {
+            let id = match service::add_location(address).await {
                 Ok(id) => id,
                 Err(error) => return (String::new(), false, Err(error)),
             };
@@ -133,9 +158,7 @@ impl App {
             (
                 id_text,
                 created,
-                service::mount_planned(id, plan)
-                    .await
-                    .map(|(path, boot)| (Some(path), boot)),
+                service::mount_planned(id, plan).await.map(Some),
             )
         };
         Task::perform(connect, move |(id, created, result)| {
@@ -155,16 +178,15 @@ impl App {
             crate::i18n::format("files-mounting-name-a9625493", &[("name", name.clone())]),
         );
         let carried = plan.clone();
-        let mount = service::mount_planned(service_id(&id), plan);
+        let target = service_id(&id);
+        let mount = async move {
+            if plan.change_account {
+                service::unmount(target.clone(), false).await?;
+            }
+            service::mount_planned(target, plan).await
+        };
         Task::perform(mount, move |result| {
-            finished(
-                id,
-                name,
-                true,
-                activity,
-                Some(carried),
-                result.map(|(path, boot)| (Some(path), boot)),
-            )
+            finished(id, name, true, activity, Some(carried), result.map(Some))
         })
     }
 
@@ -186,16 +208,9 @@ impl App {
         )
     }
 
-    // Closes a saved location's dialog. A share picker cancelled on a server
-    // this connection saved takes the bare server entry away again.
     pub(crate) fn close_location_dialog(&mut self) -> Task<Msg> {
-        match self.model.location_dialog.take() {
-            Some(LocationDialog::ChooseShare { plan, .. }) => match plan.replaces_server {
-                Some(server) => Task::perform(service::remove_location(server), |_| Msg::Noop),
-                None => Task::none(),
-            },
-            _ => Task::none(),
-        }
+        self.model.location_dialog = None;
+        Task::none()
     }
 
     fn storage_name(&self, id: &str) -> String {
@@ -255,11 +270,13 @@ impl App {
             activity,
             result,
             plan,
-            boot,
         } = message
         else {
             unreachable!("misrouted message in reduce_mount_service_finished");
         };
+        if self.model.network.opening.as_deref() == Some(name.as_str()) {
+            self.model.network.opening = None;
+        }
         let settle = |app: &mut Self, outcome: TerminalOutcome, detail: &str| {
             app.model.storage_busy.remove(&id);
             app.finish_file_activity(activity, 0, outcome, detail.to_owned());
@@ -354,9 +371,7 @@ impl App {
                         return Err(ServiceError::Cancelled);
                     }
                     service::trust_host_key(target.clone(), fingerprints).await?;
-                    service::mount_planned(target, plan)
-                        .await
-                        .map(|(path, boot)| (Some(path), boot))
+                    service::mount_planned(target, plan).await.map(Some)
                 };
                 Task::perform(trust, move |result| {
                     finished(id, name, opening, activity, Some(carried), result)
@@ -369,23 +384,27 @@ impl App {
                 } else {
                     request.id
                 };
-                // A server added by this connection only led to the share.
-                let replaces_server = plan
-                    .as_ref()
-                    .filter(|plan| plan.new_location)
-                    .map(|_| server.clone());
+                let plan = plan.unwrap_or_default();
+                let cleanup = if plan.new_location {
+                    Task::perform(service::remove_location(server.clone()), |_| Msg::Noop)
+                } else {
+                    Task::none()
+                };
                 let server = service::storage_id(&server);
+                let path = network::server_path(&server);
                 let name = self.storage_name_or_host(&server, &name);
-                self.model.location_dialog = Some(LocationDialog::ChooseShare {
-                    server,
-                    name,
-                    shares: request.shares,
-                    plan: ConnectPlan {
-                        replaces_server,
-                        ..plan.unwrap_or_default()
+                self.model.network.servers.insert(
+                    path.clone(),
+                    network::ServerPage {
+                        name,
+                        shares: request.shares,
+                        plan,
                     },
-                });
-                Task::none()
+                );
+                self.model.device_row_selected = None;
+                self.model.last_device_press = None;
+                let browse = self.nav_navigate_screen(Msg::NavigateScreen(Screen::Network, path));
+                Task::batch([cleanup, browse])
             }
             Err(ServiceError::ProtocolMismatch(_)) => {
                 pause(self);
@@ -496,41 +515,14 @@ impl App {
                 {
                     self.model.unlock = None;
                 }
-                let settled = self.reduce_storage_finished(Msg::StorageOperationFinished {
-                    id: id.clone(),
-                    name: name.clone(),
+                self.reduce_storage_finished(Msg::StorageOperationFinished {
+                    id,
+                    name,
                     opening,
                     activity,
                     result: result.map_err(|error| error.to_string()),
-                });
-                if let Some(error) = boot {
-                    self.report_boot_error(id, &name, error);
-                }
-                settled
+                })
             }
-        }
-    }
-
-    // Mounting worked but mounting at startup was not set up.
-    fn report_boot_error(&mut self, id: String, name: &str, error: ServiceError) {
-        match error {
-            ServiceError::NeedsCredentials(request) => {
-                self.ask_credentials(
-                    id,
-                    name,
-                    &request,
-                    TargetPurpose::MountAtBoot,
-                    ConnectPlan::default(),
-                );
-            }
-            ServiceError::Cancelled => {}
-            error => self.post_status(
-                crate::i18n::format(
-                    "files-name-is-mounted-but-not-at-startup-error-5b8e1f27",
-                    &[("name", name.to_owned()), ("error", error.to_string())],
-                ),
-                ToastTone::Warning,
-            ),
         }
     }
 
@@ -596,7 +588,7 @@ impl App {
                 result,
             } => {
                 self.location_updated(&id, name, action, result);
-                Task::none()
+                Task::perform(load_drives(), Msg::DrivesLoaded)
             }
             Msg::LocationRenameChanged(text) => {
                 if let Some(LocationDialog::Rename { name, .. }) = &mut self.model.location_dialog {
@@ -605,20 +597,99 @@ impl App {
                 Task::none()
             }
             Msg::LocationShareChosen(index) => {
-                let Some(LocationDialog::ChooseShare { shares, plan, .. }) =
-                    self.model.location_dialog.take()
-                else {
+                if self.model.network.opening.is_some() {
+                    return Task::none();
+                }
+                let Some(page) = self.model.network.servers.get_mut(&self.model.cwd) else {
                     return Task::none();
                 };
-                match shares.into_iter().nth(index) {
-                    Some(share) => self.service_connect(share.uri, plan),
-                    None => Task::none(),
-                }
+                let Some(share) = page.shares.get(index) else {
+                    return Task::none();
+                };
+                let plan = ConnectPlan {
+                    login: page.plan.login.take(),
+                    ..page.plan.clone()
+                };
+                let uri = share.uri.clone();
+                self.service_connect(uri, plan)
             }
             Msg::ConfirmLocationDialog => self.confirm_location_dialog(),
             Msg::CloseLocationDialog => self.close_location_dialog(),
             _ => unreachable!("misrouted message in reduce_location"),
         }
+    }
+
+    fn change_share_account(&mut self, id: String) -> Task<Msg> {
+        let Some(location) = self.storage_location(&id) else {
+            return Task::none();
+        };
+        let Some(item) = location
+            .service
+            .as_ref()
+            .filter(|item| !item.mount_at_boot && !item.busy)
+        else {
+            return Task::none();
+        };
+        if self.model.storage_busy.contains(&id) {
+            return Task::none();
+        }
+        let Some((username, domain)) = item.uri.as_deref().and_then(service::smb_account) else {
+            return Task::none();
+        };
+        let name = location.name.clone();
+        let request = service::CredentialRequest {
+            id: service_id(&id),
+            username,
+            domain,
+            can_remember: item.can_remember_password,
+            retry: false,
+        };
+        self.model.location_dialog = None;
+        self.ask_credentials(
+            id,
+            &name,
+            &request,
+            TargetPurpose::Mount,
+            ConnectPlan {
+                change_account: true,
+                ..ConnectPlan::default()
+            },
+        );
+        Task::none()
+    }
+
+    fn set_share_connection_timing(&mut self, id: String, timing: ConnectionTiming) -> Task<Msg> {
+        let Some(item) = self.storage_service(&id) else {
+            return Task::none();
+        };
+        if item.busy
+            || self.model.storage_busy.contains(&id)
+            || ConnectionTiming::current(item) == timing
+        {
+            return Task::none();
+        }
+        let target = service_id(&id);
+        let was_at_startup = item.mount_at_boot;
+        let auto = timing == ConnectionTiming::AtSignIn;
+        let action = if timing == ConnectionTiming::AtStartup {
+            if !item.can_mount_at_boot {
+                return Task::none();
+            }
+            LocationAction::SetMountAtBoot(true)
+        } else {
+            LocationAction::SetAutoConnect(auto)
+        };
+        self.model.storage_busy.insert(id.clone());
+        let change = async move {
+            if timing == ConnectionTiming::AtStartup {
+                return service::set_mount_at_boot(target, true, None).await;
+            }
+            if was_at_startup {
+                service::set_mount_at_boot(target.clone(), false, None).await?;
+            }
+            service::update_location(target, service::LocationUpdate::AutoConnect(auto)).await
+        };
+        self.location_update(id, action, change)
     }
 
     fn location_action(&mut self, id: String, action: LocationAction) -> Task<Msg> {
@@ -653,6 +724,14 @@ impl App {
                 let name = self.storage_name(&id);
                 self.model.location_dialog = Some(LocationDialog::Rename { id, name });
                 Task::none()
+            }
+            LocationAction::ShareSettings => {
+                self.model.location_dialog = Some(LocationDialog::ShareSettings { id });
+                Task::none()
+            }
+            LocationAction::ChangeAccount => self.change_share_account(id),
+            LocationAction::SetConnectionTiming(timing) => {
+                self.set_share_connection_timing(id, timing)
             }
             LocationAction::SetAutoConnect(enabled) => {
                 let change =
@@ -719,6 +798,9 @@ impl App {
                     | LocationAction::Format
                     | LocationAction::ShowSignIn
                     | LocationAction::Connect
+                    | LocationAction::ShareSettings
+                    | LocationAction::ChangeAccount
+                    | LocationAction::SetConnectionTiming(_)
                     | LocationAction::Disconnect
                     | LocationAction::ForceDisconnect => return,
                 };
@@ -730,6 +812,7 @@ impl App {
             Err(ServiceError::NeedsCredentials(request))
                 if action == LocationAction::SetMountAtBoot(true) =>
             {
+                self.model.location_dialog = None;
                 self.ask_credentials(
                     id.to_owned(),
                     &name,
@@ -788,11 +871,7 @@ impl App {
                     service::update_location(service_id(&id), service::LocationUpdate::Label(name));
                 self.location_update(id, LocationAction::Rename, change)
             }
-            // Picking a share is the confirmation.
-            dialog @ LocationDialog::ChooseShare { .. } => {
-                self.model.location_dialog = Some(dialog);
-                Task::none()
-            }
+            LocationDialog::ShareSettings { .. } => Task::none(),
             LocationDialog::Confirm {
                 id,
                 name,
@@ -818,9 +897,7 @@ impl App {
                         let retry = async move {
                             service::update_location(target.clone(), service::LocationUpdate::Smb1)
                                 .await?;
-                            service::mount_planned(target, plan)
-                                .await
-                                .map(|(path, boot)| (Some(path), boot))
+                            service::mount_planned(target, plan).await.map(Some)
                         };
                         Task::perform(retry, move |result| {
                             finished(id, name, true, activity, Some(carried), result)
@@ -842,7 +919,7 @@ impl App {
                                 AfterForce::Eject => service::remove_drive(target, false).await?,
                                 AfterForce::PowerOff => service::remove_drive(target, true).await?,
                             }
-                            Ok((None, None))
+                            Ok(None)
                         };
                         Task::perform(detach, move |result| {
                             finished(id, name, false, activity, None, result)
@@ -946,14 +1023,7 @@ impl App {
                     }
                 };
                 Task::perform(operation, move |result| {
-                    finished(
-                        id,
-                        name,
-                        true,
-                        activity,
-                        None,
-                        result.map(|path| (path, None)),
-                    )
+                    finished(id, name, true, activity, None, result)
                 })
             }
             _ => unreachable!("misrouted message in reduce_unlock"),

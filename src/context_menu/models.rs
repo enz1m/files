@@ -204,29 +204,18 @@ pub(crate) fn location_menu_model(
     let actions = crate::mount_service::location_actions(location);
     let mut entries = Vec::new();
     for (index, &action) in actions.iter().enumerate() {
-        // Groups: the connection, then settings, the password, erasing and
-        // removal, each apart from the one before.
         let previous = index.checked_sub(1).map(|i| actions[i]);
         let starts_group = previous.is_some_and(|previous| {
             (previous.connects() && !action.connects())
-                || matches!(
-                    action,
-                    LocationAction::ForgetPassword | LocationAction::Format
-                )
-                || (action == LocationAction::Remove && previous != LocationAction::ForgetPassword)
+                || matches!(action, LocationAction::Format | LocationAction::Remove)
         });
         if starts_group {
             entries.push(ContextMenuItem::separator());
         }
         let mut entry =
             ContextMenuItem::command(Command::Location(action), action.label()).icon(action.icon());
-        match action {
-            // A toggle shows its current state; choosing it switches.
-            LocationAction::SetAutoConnect(next) | LocationAction::SetMountAtBoot(next) => {
-                entry = entry.checked(!next);
-            }
-            LocationAction::Remove => entry = entry.destructive(true),
-            _ => {}
+        if action == LocationAction::Remove {
+            entry = entry.destructive(true);
         }
         entries.push(entry);
     }

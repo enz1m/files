@@ -651,18 +651,6 @@ impl App {
             Msg::ToggleAttachPasswordRevealed => {
                 self.remote_toggle_attach_password_revealed(message)
             }
-            Msg::SetAttachAutoConnect(enabled) => {
-                if let Some(attach) = &mut self.model.attach {
-                    attach.auto_connect = enabled;
-                }
-                Task::none()
-            }
-            Msg::SetAttachMountAtBoot(enabled) => {
-                if let Some(attach) = &mut self.model.attach {
-                    attach.mount_at_boot = enabled;
-                }
-                Task::none()
-            }
             Msg::SetAttachRememberPassword(remember) => {
                 if let Some(attach) = &mut self.model.attach {
                     attach.remember_password = remember;

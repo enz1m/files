@@ -67,6 +67,7 @@ pub(crate) struct ServiceItem {
     pub(crate) auto_connect: bool,
     pub(crate) mount_at_boot: bool,
     pub(crate) can_mount_at_boot: bool,
+    pub(crate) can_remember_password: bool,
     // Free and total bytes, from the service's latest probe.
     pub(crate) space: Option<(u64, u64)>,
     // A writable volume of a drive that can be unplugged: the service may

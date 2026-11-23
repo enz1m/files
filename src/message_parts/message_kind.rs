@@ -200,8 +200,6 @@ impl enzui_core::crash_report::MessageKind for Msg {
             Self::AttachPasswordChanged(..) => "AttachPasswordChanged",
             Self::ToggleAttachPasswordRevealed => "ToggleAttachPasswordRevealed",
             Self::SetAttachRememberPassword(..) => "SetAttachRememberPassword",
-            Self::SetAttachAutoConnect(..) => "SetAttachAutoConnect",
-            Self::SetAttachMountAtBoot(..) => "SetAttachMountAtBoot",
             Self::DiscoverSmb => "DiscoverSmb",
             Self::AttachDiscovered(..) => "AttachDiscovered",
             Self::AdoptDiscovered(..) => "AdoptDiscovered",

@@ -44,6 +44,10 @@
     "files-accessed-5a700e09"
   ],
   [
+    "Account",
+    "files-share-account"
+  ],
+  [
     "Add Cloud Drive",
     "files-add-cloud-drive-974fccb1"
   ],
@@ -316,6 +320,10 @@
     "files-center-2643b665"
   ],
   [
+    "Change account",
+    "files-share-change-account"
+  ],
+  [
     "Changes not counted",
     "files-changes-not-counted-dd544fc8"
   ],
@@ -326,6 +334,10 @@
   [
     "Changes were written but could not be confirmed durable. Retry to confirm.",
     "files-changes-were-written-but-could-not-c222c47f"
+  ],
+  [
+    "Changing accounts reconnects the share. Close any open files first.",
+    "files-share-change-active-account"
   ],
   [
     "Check the user name and password, then try again.",
@@ -342,6 +354,10 @@
   [
     "Choose a Share",
     "files-choose-a-share-5ee51c6a"
+  ],
+  [
+    "Choose a different connection time before changing the account used at startup.",
+    "files-share-change-startup-account"
   ],
   [
     "Choose a local .enzfiles package",
@@ -462,6 +478,10 @@
   [
     "Connect at login",
     "files-connect-at-login-a34788fb"
+  ],
+  [
+    "Connect this share",
+    "files-share-timing"
   ],
   [
     "Connect to Server",
@@ -738,6 +758,10 @@
   [
     "Display files and folders whose name starts with a dot.",
     "files-display-files-and-folders-whose-name-434aaa16"
+  ],
+  [
+    "Display name",
+    "files-share-display-name"
   ],
   [
     "Documents",
@@ -1072,6 +1096,10 @@
     "files-for-older-cameras-car-stereos-and-game-0f25e6c4"
   ],
   [
+    "Forget",
+    "files-share-forget-password"
+  ],
+  [
     "Forget Password",
     "files-forget-password-e0584c22"
   ],
@@ -1146,6 +1174,10 @@
   [
     "Group directories at the top of every listing.",
     "files-group-directories-at-the-top-of-be9d10e4"
+  ],
+  [
+    "Guest access",
+    "files-share-guest"
   ],
   [
     "Home",
@@ -2236,6 +2268,10 @@
     "files-save-settings-9b3bc99f"
   ],
   [
+    "Saved password",
+    "files-share-password"
+  ],
+  [
     "Scan Network",
     "files-scan-network-23be2a65"
   ],
@@ -2328,6 +2364,10 @@
     "files-share-5bc16006"
   ],
   [
+    "Share Settings",
+    "files-share-settings"
+  ],
+  [
     "Shortcuts",
     "files-shortcuts"
   ],
@@ -2346,6 +2386,14 @@
   [
     "Shown below file and folder names in Grid view.",
     "files-shown-below-file-and-folder-names-ed8cebd0"
+  ],
+  [
+    "Sign In and Open",
+    "files-share-sign-in-open"
+  ],
+  [
+    "Sign in with an account",
+    "files-share-sign-in"
   ],
   [
     "Single-click to open",
@@ -2422,6 +2470,10 @@
   [
     "System",
     "files-system-222143a8"
+  ],
+  [
+    "System startup connects before anyone signs in and requires administrator approval.",
+    "files-share-startup-help"
   ],
   [
     "Template",
@@ -2824,6 +2876,10 @@
     "files-this-native-worker-runs-with-your-2163552c"
   ],
   [
+    "This share is no longer available.",
+    "files-share-unavailable"
+  ],
+  [
     "This version could not be read",
     "files-this-version-could-not-be-read-d60f86d1"
   ],
@@ -3116,6 +3172,18 @@
     "files-waiting-for-the-sign-in-in-your-c5da5856"
   ],
   [
+    "When I sign in",
+    "files-share-at-sign-in"
+  ],
+  [
+    "When opened",
+    "files-share-on-demand"
+  ],
+  [
+    "When the computer starts",
+    "files-share-at-startup"
+  ],
+  [
     "Window",
     "files-window-98aec1a0"
   ],
@@ -3138,6 +3206,10 @@
   [
     "Write",
     "files-label-3f00927a7193"
+  ],
+  [
+    "Write access depends on the permissions of your account on the server.",
+    "files-share-write-permissions"
   ],
   [
     "Yesterday",

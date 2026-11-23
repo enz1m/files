@@ -691,6 +691,7 @@ pub(crate) use scanners::default_scanner;
 pub(crate) use state::{
     AttachState, BackendStatus, DiscoveryState, NetworkState, ServiceTarget, TargetPurpose,
 };
+pub(crate) use state::{ServerPage, is_server_path, server_path};
 
 #[cfg(test)]
 mod tests;

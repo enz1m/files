@@ -292,9 +292,12 @@ pub(crate) fn device_row<'a>(
     let mut surface = match row.open {
         Some(open) => {
             let enter = open.clone();
-            let press = Msg::DeviceRowPressed {
-                key: row.key.clone(),
-                open: Box::new(open),
+            let press = match open {
+                Msg::MountDiscovered(_) | Msg::LocationShareChosen(_) => open,
+                open => Msg::DeviceRowPressed {
+                    key: row.key.clone(),
+                    open: Box::new(open),
+                },
             };
             enz_list_row_surface(content, press)
                 .on_enter(move || enter.clone())

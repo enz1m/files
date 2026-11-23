@@ -11,7 +11,7 @@ impl Model {
         if self.screen == Screen::Directory && path == self.cwd {
             return;
         }
-        if self.screen == Screen::Directory {
+        if self.screen == Screen::Directory || crate::network::is_server_path(&self.cwd) {
             self.back.push(self.cwd.clone());
         }
         self.forward.clear();
@@ -205,7 +205,7 @@ impl Model {
     // Navigate to a virtual screen (Computer, Recent, Trash), pushing
     // `sentinel` on the back stack so Back returns here.
     pub(crate) fn navigate_screen(&mut self, screen: Screen, sentinel: PathBuf) {
-        if self.screen == screen {
+        if self.screen == screen && self.cwd == sentinel {
             return;
         }
         self.back.push(self.cwd.clone());
@@ -239,7 +239,8 @@ impl Model {
     }
 
     pub(crate) fn can_go_up(&self) -> bool {
-        self.screen == Screen::Directory && self.cwd.parent().is_some()
+        (self.screen == Screen::Directory && self.cwd.parent().is_some())
+            || crate::network::is_server_path(&self.cwd)
     }
 
     // Go back one entry. Returns the path that became cwd, or `None`.
@@ -284,7 +285,7 @@ impl Model {
             Screen::Trash
         } else if s == services::DOWNLOADS_VIEW_ROOT {
             Screen::Downloads
-        } else if s == services::NETWORK_VIEW_ROOT {
+        } else if s == services::NETWORK_VIEW_ROOT || crate::network::is_server_path(path) {
             Screen::Network
         } else {
             Screen::Directory
@@ -300,6 +301,11 @@ impl Model {
     // `load_error` is left for the load result to replace, so the old view
     // never flashes as though it had loaded.
     fn reset_transient(&mut self) {
+        for (path, page) in &mut self.network.servers {
+            if *path != self.cwd {
+                page.plan.login = None;
+            }
+        }
         self.selection.clear();
         // The old folder's files must not stay on screen, or act, under the
         // new folder's path while its listing is on its way.

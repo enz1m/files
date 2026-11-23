@@ -454,7 +454,6 @@ impl App {
                 activity,
                 result,
                 plan: None,
-                boot: None,
             });
         }
         if opening {
@@ -467,7 +466,6 @@ impl App {
                     activity,
                     result,
                     plan: None,
-                    boot: None,
                 },
             );
         }

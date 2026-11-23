@@ -398,7 +398,7 @@ impl Mount {
         &self,
         connection: &zbus::Connection,
         id: &str,
-        password: Option<String>,
+        login: Option<(String, String, String)>,
         remember: bool,
     ) -> Result<String, MountError> {
         let item = self.lock().item(id)?.clone();
@@ -448,8 +448,8 @@ impl Mount {
                 .to_string(),
             ));
         }
-        if item.needs_password {
-            match password.as_deref() {
+        if item.needs_password || login.is_some() {
+            match login.as_ref().map(|(_, _, password)| password.as_str()) {
                 None | Some("") => {
                     return Err(MountError::NeedsCredentials(
                         serde_json::json!({
@@ -477,6 +477,22 @@ impl Mount {
             item.state = "mounted";
             item.reason = None;
             item.mount = Some(folder.clone());
+            if let Some((username, domain, _)) = login
+                && !username.is_empty()
+                && let Some((host, _, path)) = item
+                    .uri
+                    .as_deref()
+                    .and_then(crate::mount_service::smb_authority)
+            {
+                use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
+                let domain = if domain.is_empty() {
+                    String::new()
+                } else {
+                    format!("{};", utf8_percent_encode(&domain, NON_ALPHANUMERIC))
+                };
+                let username = utf8_percent_encode(&username, NON_ALPHANUMERIC);
+                item.uri = Some(format!("smb://{domain}{username}@{host}/{path}"));
+            }
             if remember {
                 item.needs_password = false;
                 item.saved = true;
@@ -517,14 +533,19 @@ impl Mount {
         &self,
         #[zbus(connection)] connection: &zbus::Connection,
         id: String,
-        _username: String,
-        _domain: String,
+        username: String,
+        domain: String,
         secret: OwnedFd,
         remember: bool,
     ) -> Result<String, MountError> {
         let password = read_secret(&secret);
-        self.mount_checked(connection, &id, Some(password), remember)
-            .await
+        self.mount_checked(
+            connection,
+            &id,
+            Some((username, domain, password)),
+            remember,
+        )
+        .await
     }
 
     async fn unlock(
@@ -645,7 +666,9 @@ impl Mount {
                     server_only: uri.starts_with("smb://") && share.is_empty(),
                     smb1: host.starts_with("old"),
                     host_key: uri.starts_with("sftp://"),
-                    needs_password: uri.starts_with("smb://") && !share.is_empty(),
+                    needs_password: uri.starts_with("smb://")
+                        && !share.is_empty()
+                        && share != "photos",
                     ..DemoItem::default()
                 });
                 id

@@ -6,6 +6,24 @@ use super::{
     NetworkTrustStatus, PasswordRequirement, ScanResult,
 };
 use enzui_core::form::SecretText;
+use std::collections::BTreeMap;
+use std::path::PathBuf;
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ServerPage {
+    pub(crate) name: String,
+    pub(crate) shares: Vec<crate::mount_service::ShareChoice>,
+    pub(crate) plan: crate::mount_service::ConnectPlan,
+}
+
+pub(crate) fn server_path(id: &str) -> PathBuf {
+    PathBuf::from(format!("{}/{id}", crate::services::NETWORK_VIEW_ROOT))
+}
+
+pub(crate) fn is_server_path(path: &std::path::Path) -> bool {
+    path.starts_with(crate::services::NETWORK_VIEW_ROOT)
+        && path != std::path::Path::new(crate::services::NETWORK_VIEW_ROOT)
+}
 
 // The health of the network backend (gvfs / gio), shown as "Backend Status".
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -73,10 +91,6 @@ pub(crate) struct AttachState {
     // The enzimOS mount service connects: the server field also takes a full
     // address, and the location options below apply.
     pub(crate) service: bool,
-    // Reconnect when the person logs in (saves the location).
-    pub(crate) auto_connect: bool,
-    // Also mount at startup, before login (SMB shares and NFS only).
-    pub(crate) mount_at_boot: bool,
 }
 
 // The mount service location a credential form answers for.
@@ -120,6 +134,8 @@ pub(crate) enum DiscoveryState {
 // form keeps the LAN results.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct NetworkState {
+    pub(crate) servers: BTreeMap<PathBuf, ServerPage>,
+    pub(crate) opening: Option<String>,
     pub(crate) discovered: Vec<DiscoveredShare>,
     pub(crate) discovery: DiscoveryState,
     pub(crate) context: DiscoveryContext,
@@ -132,6 +148,8 @@ pub(crate) struct NetworkState {
 impl Default for NetworkState {
     fn default() -> Self {
         Self {
+            servers: BTreeMap::new(),
+            opening: None,
             discovered: Vec::new(),
             discovery: DiscoveryState::Idle,
             context: DiscoveryContext::default(),
@@ -222,8 +240,6 @@ impl Default for AttachState {
             context: DiscoveryContext::default(),
             service_target: None,
             service: false,
-            auto_connect: false,
-            mount_at_boot: false,
         }
     }
 }
@@ -270,12 +286,6 @@ impl AttachState {
             format!("/{share}")
         };
         Some(format!("{}://{auth}{server}{path}", self.protocol.scheme()))
-    }
-
-    // Whether the address can be mounted at startup.
-    pub(crate) fn can_mount_at_boot(&self) -> bool {
-        self.service_address()
-            .is_some_and(|address| crate::mount_service::can_mount_at_boot(&address))
     }
 
     // Whether the form can be submitted, ignoring backend support; see

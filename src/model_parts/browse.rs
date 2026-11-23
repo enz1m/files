@@ -476,7 +476,16 @@ impl Model {
                 // Not "Downloads": that is the folder in the home directory.
                 return vec![(crate::i18n::tr("Download Manager").into(), self.cwd.clone())];
             }
-            Screen::Network => return vec![(crate::i18n::tr("Network").into(), self.cwd.clone())],
+            Screen::Network => {
+                let mut crumbs = vec![(
+                    crate::i18n::tr("Network").into(),
+                    PathBuf::from(services::NETWORK_VIEW_ROOT),
+                )];
+                if let Some(server) = self.network.servers.get(&self.cwd) {
+                    crumbs.push((server.name.clone(), self.cwd.clone()));
+                }
+                return crumbs;
+            }
             Screen::Directory => {}
         }
         let mut out = Vec::new();

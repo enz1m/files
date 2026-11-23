@@ -47,6 +47,9 @@ fn connect_action() -> Action<Msg> {
 
 pub(crate) fn view<'a>(model: &'a Model, theme: &'a EnzTheme) -> Element<'a, Msg> {
     let state = &model.network;
+    if let Some(server) = state.servers.get(&model.cwd) {
+        return server_page(server, model, theme);
+    }
     let body_has_connect_action = !state.pending
         && (state.operation_error.is_some()
             || matches!(
@@ -259,13 +262,13 @@ pub(crate) fn view<'a>(model: &'a Model, theme: &'a EnzTheme) -> Element<'a, Msg
                     warning: false,
                     usage: None,
                     primary: Some((
-                        crate::i18n::tr("Connect").to_owned(),
+                        crate::i18n::tr("Open").to_owned(),
                         Msg::MountDiscovered(index),
                     )),
                     icons: Vec::new(),
                     menu: None,
                     open: Some(Msg::MountDiscovered(index)),
-                    busy: false,
+                    busy: model.network.opening.as_deref() == Some(uri.as_str()),
                 },
                 model,
                 theme,
@@ -286,6 +289,53 @@ pub(crate) fn view<'a>(model: &'a Model, theme: &'a EnzTheme) -> Element<'a, Msg
         sections.push(found.push(container(body).width(Length::Fill)).into());
     }
     enz_scroll_column(sections)
+        .spacing(theme.spacing.lg())
+        .inset(theme.spacing.space9)
+        .height(Length::Fill)
+        .width(Length::Fill)
+        .into()
+}
+
+fn server_page<'a>(
+    server: &crate::network::ServerPage,
+    model: &'a Model,
+    theme: &'a EnzTheme,
+) -> Element<'a, Msg> {
+    let header = enz_page_header(server.name.clone()).into_element();
+    let content: Element<'a, Msg> = if server.shares.is_empty() {
+        enz_status_page(crate::i18n::tr("The server lists no shares you can open."))
+            .icon("folder-open")
+            .into_element()
+    } else {
+        let rows = server.shares.iter().enumerate().map(|(index, share)| {
+            super::storage::device_row(
+                super::storage::DeviceRow {
+                    key: share.uri.clone(),
+                    icon: "folder",
+                    art: &["folder-remote"],
+                    name: share.name.clone(),
+                    status: share.comment.clone(),
+                    warning: false,
+                    usage: None,
+                    primary: Some((
+                        crate::i18n::tr("Open").to_owned(),
+                        Msg::LocationShareChosen(index),
+                    )),
+                    icons: Vec::new(),
+                    menu: None,
+                    open: Some(Msg::LocationShareChosen(index)),
+                    busy: model.network.opening.as_deref() == Some(share.uri.as_str()),
+                },
+                model,
+                theme,
+            )
+        });
+        iced::widget::Column::with_children(rows)
+            .spacing(theme.spacing.xs())
+            .width(Length::Fill)
+            .into()
+    };
+    enz_scroll_column(vec![header, content])
         .spacing(theme.spacing.lg())
         .inset(theme.spacing.space9)
         .height(Length::Fill)

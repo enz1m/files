@@ -287,6 +287,9 @@ impl App {
         // Closes an overlay drawer in the same gesture; an inline sidebar is
         // unaffected.
         self.model.nav.dismiss_overlay();
+        if path == Path::new(services::NETWORK_VIEW_ROOT) || network::is_server_path(&path) {
+            return self.nav_navigate_screen(Msg::NavigateScreen(Screen::Network, path));
+        }
         self.model.navigate_to(path);
         self.arm_dir_watch();
         Task::batch([self.reload(), self.main_window_scope()])
@@ -328,6 +331,12 @@ impl App {
         let Msg::GoUp = message else {
             unreachable!("misrouted message in nav_go_up");
         };
+        if network::is_server_path(&self.model.cwd) {
+            return self.nav_navigate_screen(Msg::NavigateScreen(
+                Screen::Network,
+                PathBuf::from(services::NETWORK_VIEW_ROOT),
+            ));
+        }
         if self.model.go_up().is_some() {
             self.arm_dir_watch();
             Task::batch([self.reload(), self.main_window_scope()])

@@ -269,7 +269,9 @@ impl App {
                 }
             }
             Screen::Network => {
-                if !self.model.features.enabled(features::FeatureId::Network) {
+                if network::is_server_path(&self.model.cwd)
+                    || !self.model.features.enabled(features::FeatureId::Network)
+                {
                     Task::none()
                 } else if matches!(self.model.network.discovery, network::DiscoveryState::Idle) {
                     self.update_inner(Msg::DiscoverNetwork)
