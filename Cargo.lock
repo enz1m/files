@@ -1394,7 +1394,7 @@ dependencies = [
 
 [[package]]
 name = "files-app"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "cairo-rs",
  "dirs",
