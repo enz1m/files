@@ -15,7 +15,6 @@ use enzui_widgets::enz_text::TextSize;
 use enzui_widgets::icon_label::{IconLabelA11y, IconLabelDisplay, enz_icon_label};
 use enzui_widgets::list_row_surface::{ListRowSurfaceTokens, enz_list_row_surface};
 use enzui_widgets::marquee_area::{MarqueeTokens, enz_marquee_area};
-use enzui_widgets::status_page::enz_status_page;
 use enzui_widgets::table_header_cell::{EnzTableHeaderCellAlign, enz_table_header_cell};
 use enzui_widgets::table_text_cell::{EnzTableTextAlign, enz_table_text_cell};
 use enzui_widgets::text_measure::{MeasureTypography, enz_text_measure_width};
@@ -794,38 +793,8 @@ fn background_context_target<'a>(content: Element<'a, Msg>, model: &Model) -> El
         .into()
 }
 
-// The empty-folder and no-search-results states, built on [`enz_status_page`].
-//
-// A search with no matches uses a `search-x` glyph and recovery advice.
 fn empty_state<'a>(model: &Model, palette: &Palette) -> Element<'a, Msg> {
-    let searching = model.search_active && !model.search_query.is_empty();
-    let page = if searching {
-        enz_status_page(crate::i18n::tr(super::NO_MATCHES_TITLE))
-            .description(crate::i18n::tr(super::NO_MATCHES_DESCRIPTION))
-            .icon("search-x")
-    } else {
-        // Offered only on real filesystem screens; `Msg::NewFolder` refuses on
-        // virtual roots.
-        let mut page = enz_status_page(crate::i18n::tr(super::EMPTY_FOLDER_TITLE))
-            .description(crate::i18n::tr(super::EMPTY_FOLDER_DESCRIPTION))
-            .icon("folder-open");
-        if !crate::services::is_virtual(&model.cwd) {
-            // Same virtual-root guard as New Folder.
-            page = page
-                .primary_action(
-                    enzui_core::Action::new("new-folder", Msg::NewFolder)
-                        .with_label(crate::i18n::tr("New Folder")),
-                )
-                .secondary_action(
-                    enzui_core::Action::new("new-file", Msg::NewFile)
-                        .with_label(crate::i18n::tr("New File")),
-                )
-                .secondary_action_kind(enzui_widgets::button::ButtonKind::Quiet);
-        }
-        page
-    };
-
-    container(page.into_element())
+    container(super::empty_directory_page(model))
         .center_x(Length::Fill)
         .center_y(Length::Fill)
         .style({

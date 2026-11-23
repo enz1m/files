@@ -16,14 +16,37 @@ pub(crate) mod widgets;
 
 use crate::model::Model;
 
-// The empty-folder title, shared by the list and grid views; see
-// [`EMPTY_FOLDER_DESCRIPTION`].
 pub(crate) const EMPTY_FOLDER_TITLE: &str = "This folder is empty";
 
 pub(crate) const EMPTY_FOLDER_DESCRIPTION: &str = "Drop files or create a new one to get started.";
 
 pub(crate) const NO_MATCHES_TITLE: &str = "No matches";
 pub(crate) const NO_MATCHES_DESCRIPTION: &str = "Try a different search.";
+
+pub(crate) fn empty_directory_page(model: &Model) -> iced::Element<'static, crate::message::Msg> {
+    use crate::{i18n::tr, message::Msg};
+    use enzui_core::Action;
+    use enzui_widgets::action_emphasis::ActionEmphasis;
+    use enzui_widgets::status_page::enz_status_page;
+
+    if model.search_active && !model.search_query.is_empty() {
+        return enz_status_page(tr(NO_MATCHES_TITLE))
+            .description(tr(NO_MATCHES_DESCRIPTION))
+            .icon("search-x")
+            .into_element();
+    }
+
+    let mut page = enz_status_page(tr(EMPTY_FOLDER_TITLE))
+        .description(tr(EMPTY_FOLDER_DESCRIPTION))
+        .icon("folder-open");
+    if !crate::services::is_virtual(&model.cwd) {
+        page = page
+            .primary_action(Action::new("new-folder", Msg::NewFolder).with_label(tr("New Folder")))
+            .primary_action_emphasis(ActionEmphasis::Neutral)
+            .secondary_action(Action::new("new-file", Msg::NewFile).with_label(tr("New File")));
+    }
+    page.into_element()
+}
 
 pub(crate) const DETAILS_EMPTY_HINT: &str = "Select a file to view details.";
 

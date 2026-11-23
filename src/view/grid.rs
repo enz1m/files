@@ -14,7 +14,6 @@ use enzui_widgets::enz_text::{TextAlign, TextSize, TextTone, enz_text};
 use enzui_widgets::image_widget::{EnzImageFit, enz_image_handle};
 use enzui_widgets::marquee_area::{MarqueeTokens, enz_marquee_area};
 use enzui_widgets::pressable::{PressableStyle, enz_pressable};
-use enzui_widgets::status_page::enz_status_page;
 use enzui_widgets::virtual_grid::enz_virtual_grid;
 use iced::widget::{column, container};
 use iced::{Alignment, Element, Length};
@@ -63,31 +62,7 @@ pub(crate) fn view_hosted_by<'a>(
     channel: &DragHostChannel,
 ) -> Element<'a, Msg> {
     if model.visible_provider.len() == 0 {
-        let searching = model.search_active && !model.search_query.is_empty();
-        let page = if searching {
-            enz_status_page(crate::i18n::tr(super::NO_MATCHES_TITLE))
-                .description(crate::i18n::tr(super::NO_MATCHES_DESCRIPTION))
-                .icon("search-x")
-        } else {
-            // The description promises a way to create a file, so offer one.
-            let mut page = enz_status_page(crate::i18n::tr(super::EMPTY_FOLDER_TITLE))
-                .description(crate::i18n::tr(super::EMPTY_FOLDER_DESCRIPTION))
-                .icon("folder-open");
-            if !crate::services::is_virtual(&model.cwd) {
-                page = page
-                    .primary_action(
-                        enzui_core::Action::new("new-folder", Msg::NewFolder)
-                            .with_label(crate::i18n::tr("New Folder")),
-                    )
-                    .secondary_action(
-                        enzui_core::Action::new("new-file", Msg::NewFile)
-                            .with_label(crate::i18n::tr("New File")),
-                    )
-                    .secondary_action_kind(enzui_widgets::button::ButtonKind::Quiet);
-            }
-            page
-        };
-        let empty = container(page.into_element())
+        let empty = container(super::empty_directory_page(model))
             .center_x(Length::Fill)
             .center_y(Length::Fill)
             .into();
