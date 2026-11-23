@@ -38,6 +38,38 @@ fn never() -> bool {
     false
 }
 
+fn compress(
+    sources: &[PathBuf],
+    dest: &Path,
+    format: ArchiveFormat,
+    limits: &Limits,
+    cancelled: &dyn Fn() -> bool,
+) -> Result<CompressReport, ArchiveError> {
+    super::compress(
+        sources,
+        dest,
+        format,
+        limits,
+        cancelled,
+        &CompressionProgress::default(),
+    )
+}
+
+fn extract(
+    archive: &Path,
+    dest: &Path,
+    limits: &Limits,
+    cancelled: &dyn Fn() -> bool,
+) -> Result<ExtractReport, ArchiveError> {
+    super::extract(
+        archive,
+        dest,
+        limits,
+        cancelled,
+        &ExtractProgress::default(),
+    )
+}
+
 fn names(dir: &Path) -> Vec<String> {
     let mut out: Vec<String> = fs::read_dir(dir)
         .unwrap()
@@ -84,7 +116,24 @@ fn zip_and_tar_gz_round_trip_a_tree_and_skip_its_symlink() {
         let proj = sample_tree(&scratch.dir("src"));
         let out_dir = scratch.dir("out");
 
-        let packed = compress(&[proj], &out_dir, format, &Limits::default(), &never).unwrap();
+        let compression = CompressionProgress::default();
+        let packed = super::compress(
+            &[proj],
+            &out_dir,
+            format,
+            &Limits::default(),
+            &never,
+            &compression,
+        )
+        .unwrap();
+        let source_bytes = 200_000 + b"alpha\n".len() as u64 + b"#!/bin/sh\n".len() as u64;
+        assert_eq!(
+            compression.activity(),
+            ActivityProgress::Bytes {
+                done: source_bytes,
+                total: Some(source_bytes)
+            }
+        );
         assert_eq!(packed.output, out_dir.join(format!("proj.{extension}")));
         assert_eq!(packed.skipped, 0);
         assert_eq!(names(&out_dir), vec![format!("proj.{extension}")]);

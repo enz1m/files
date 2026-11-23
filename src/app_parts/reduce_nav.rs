@@ -120,6 +120,16 @@ impl App {
                     self.model.refresh_visible_provider();
                 }
             }
+            self.model.pending_copy_folders.retain(|folder| {
+                folder.activity.is_some()
+                    || (self.dir_watch_pending_rescan
+                        && folder.path.parent() == Some(path.as_path())
+                        && !self
+                            .model
+                            .entries
+                            .iter()
+                            .any(|entry| entry.path == folder.path))
+            });
             if self.dir_watch_pending_rescan {
                 self.dir_watch_pending_rescan = false;
                 let reload = self.reload();

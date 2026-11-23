@@ -1,8 +1,4 @@
 // Application wiring for the shared operation activity center.
-//
-// File operations do not expose streaming byte counts, so they publish the
-// item count known at dispatch and remain honestly indeterminate within each
-// item. Downloads use the framework adapter directly.
 
 use enzui_core::operation_activity::{
     Activity, ActivityCenter, ActivityControl, ActivityKey, ActivityKind, ActivityProgress,

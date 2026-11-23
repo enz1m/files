@@ -6,8 +6,50 @@
 use std::fs::{self, File};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+use enzui_core::operation_activity::{ActivityKey, ActivityProgress};
+use enzui_services::archive::ExtractProgress;
 
 pub(crate) use enzui_services::archive::ArchiveFormat;
+
+#[derive(Clone, Debug, Default)]
+pub(crate) struct CompressionProgress(Arc<CompressionCounters>);
+
+#[derive(Debug, Default)]
+struct CompressionCounters {
+    total: AtomicU64,
+    read: AtomicU64,
+}
+
+impl CompressionProgress {
+    fn activity(&self) -> ActivityProgress {
+        let total = self.0.total.load(Ordering::Relaxed);
+        ActivityProgress::Bytes {
+            done: self.0.read.load(Ordering::Relaxed).min(total),
+            total: (total > 0).then_some(total),
+        }
+    }
+
+    fn record(&self, bytes: usize) {
+        self.0.read.fetch_add(bytes as u64, Ordering::Relaxed);
+    }
+}
+
+enum ArchiveProgress {
+    Extract(ExtractProgress),
+    Compress(CompressionProgress),
+}
+
+impl ArchiveProgress {
+    fn activity(&self) -> ActivityProgress {
+        match self {
+            Self::Extract(progress) => progress.activity(),
+            Self::Compress(progress) => progress.activity(),
+        }
+    }
+}
 
 // Bounds applied while an archive is read or written.
 #[derive(Clone, Copy, Debug)]
@@ -156,6 +198,7 @@ fn bounded_copy(
     total: &mut u64,
     limits: &Limits,
     cancelled: &dyn Fn() -> bool,
+    progress: &CompressionProgress,
 ) -> Result<u64, ArchiveError> {
     let mut buffer = vec![0u8; CHUNK];
     let mut copied = 0u64;
@@ -176,6 +219,7 @@ fn bounded_copy(
             return Err(ArchiveError::LimitExceeded(crate::i18n::tr("total size")));
         }
         writer.write_all(&buffer[..read])?;
+        progress.record(read);
         copied += read as u64;
     }
 }
@@ -195,6 +239,7 @@ pub(crate) fn extract(
     dest_dir: &Path,
     limits: &Limits,
     cancelled: &dyn Fn() -> bool,
+    progress: &ExtractProgress,
 ) -> Result<ExtractReport, ArchiveError> {
     use enzui_services::archive as shared;
     let mut request = shared::ExtractRequest::new(archive, dest_dir);
@@ -203,19 +248,18 @@ pub(crate) fn extract(
         max_output_bytes: limits.max_total_bytes,
         max_file_size: limits.max_total_bytes,
     };
-    let report = shared::extract(&request, &shared::ExtractProgress::default(), cancelled)
-        .map_err(|error| match error {
-            shared::ArchiveError::Cancelled => ArchiveError::Cancelled,
-            shared::ArchiveError::Unsupported => ArchiveError::Unsupported,
-            shared::ArchiveError::LimitExceeded(shared::Limit::Entries) => {
-                ArchiveError::LimitExceeded(crate::i18n::tr("entry count"))
-            }
-            shared::ArchiveError::LimitExceeded(_) => {
-                ArchiveError::LimitExceeded(crate::i18n::tr("total size"))
-            }
-            shared::ArchiveError::Corrupt(detail) => ArchiveError::Corrupt(detail),
-            error => ArchiveError::Extraction(error),
-        })?;
+    let report = shared::extract(&request, progress, cancelled).map_err(|error| match error {
+        shared::ArchiveError::Cancelled => ArchiveError::Cancelled,
+        shared::ArchiveError::Unsupported => ArchiveError::Unsupported,
+        shared::ArchiveError::LimitExceeded(shared::Limit::Entries) => {
+            ArchiveError::LimitExceeded(crate::i18n::tr("entry count"))
+        }
+        shared::ArchiveError::LimitExceeded(_) => {
+            ArchiveError::LimitExceeded(crate::i18n::tr("total size"))
+        }
+        shared::ArchiveError::Corrupt(detail) => ArchiveError::Corrupt(detail),
+        error => ArchiveError::Extraction(error),
+    })?;
     Ok(ExtractReport {
         output: report.output,
         files: report.files,
@@ -281,6 +325,7 @@ fn walk(
 struct CancelRead<'a, R> {
     inner: R,
     cancelled: &'a dyn Fn() -> bool,
+    progress: &'a CompressionProgress,
 }
 
 impl<R: Read> Read for CancelRead<'_, R> {
@@ -288,7 +333,9 @@ impl<R: Read> Read for CancelRead<'_, R> {
         if (self.cancelled)() {
             return Err(cancelled_error());
         }
-        self.inner.read(buf)
+        let read = self.inner.read(buf)?;
+        self.progress.record(read);
+        Ok(read)
     }
 }
 
@@ -307,6 +354,7 @@ fn write_zip(
     limits: &Limits,
     cancelled: &dyn Fn() -> bool,
     skipped: &mut u64,
+    progress: &CompressionProgress,
 ) -> Result<File, ArchiveError> {
     use std::os::unix::fs::PermissionsExt;
     use zip::write::SimpleFileOptions;
@@ -331,7 +379,14 @@ fn write_zip(
         } else if metadata.is_file() {
             zip.start_file(name, options).map_err(zip_error)?;
             let mut reader = File::open(&source.path)?;
-            bounded_copy(&mut reader, &mut zip, &mut total, limits, cancelled)?;
+            bounded_copy(
+                &mut reader,
+                &mut zip,
+                &mut total,
+                limits,
+                cancelled,
+                progress,
+            )?;
         } else {
             *skipped += 1;
         }
@@ -344,6 +399,7 @@ fn write_tar_gz(
     entries: &[(Source, fs::Metadata)],
     cancelled: &dyn Fn() -> bool,
     skipped: &mut u64,
+    progress: &CompressionProgress,
 ) -> Result<File, ArchiveError> {
     let encoder = flate2::write::GzEncoder::new(file, flate2::Compression::default());
     let mut tar = tar::Builder::new(encoder);
@@ -361,6 +417,7 @@ fn write_tar_gz(
             let reader = CancelRead {
                 inner: File::open(&source.path)?,
                 cancelled,
+                progress,
             };
             tar.append_data(&mut header, &source.name, reader)?;
         } else {
@@ -380,6 +437,7 @@ pub(crate) fn compress(
     format: ArchiveFormat,
     limits: &Limits,
     cancelled: &dyn Fn() -> bool,
+    progress: &CompressionProgress,
 ) -> Result<CompressReport, ArchiveError> {
     if !matches!(format, ArchiveFormat::Zip | ArchiveFormat::TarGz) {
         return Err(ArchiveError::Unsupported);
@@ -404,9 +462,20 @@ pub(crate) fn compress(
     let mut skipped = 0u64;
     let result = (|| -> Result<(PathBuf, u64), ArchiveError> {
         let entries = walk(sources, &partial, limits, cancelled)?;
+        let total = entries
+            .iter()
+            .filter(|(_, metadata)| metadata.is_file())
+            .fold(0u64, |sum, (_, metadata)| {
+                sum.saturating_add(metadata.len())
+            });
+        progress.0.total.store(total, Ordering::Relaxed);
         let file = match format {
-            ArchiveFormat::Zip => write_zip(file, &entries, limits, cancelled, &mut skipped)?,
-            ArchiveFormat::TarGz => write_tar_gz(file, &entries, cancelled, &mut skipped)?,
+            ArchiveFormat::Zip => {
+                write_zip(file, &entries, limits, cancelled, &mut skipped, progress)?
+            }
+            ArchiveFormat::TarGz => {
+                write_tar_gz(file, &entries, cancelled, &mut skipped, progress)?
+            }
             _ => unreachable!("refused above"),
         };
         file.sync_all()?;
@@ -473,17 +542,19 @@ fn settle(result: Result<(PathBuf, String), ArchiveError>) -> ArchiveResult {
 // handle of each one still in flight, keyed by its Activity Center row.
 pub(crate) struct ArchiveWork {
     owner: enzui_core::blocking_task::BlockingTaskOwner,
-    cancels: std::collections::BTreeMap<
-        enzui_core::operation_activity::ActivityKey,
-        enzui_core::blocking_task::BlockingTaskCancellation<ArchiveResult>,
-    >,
+    active: std::collections::BTreeMap<ActivityKey, ArchiveOperation>,
     generation: u64,
+}
+
+struct ArchiveOperation {
+    cancellation: enzui_core::blocking_task::BlockingTaskCancellation<ArchiveResult>,
+    progress: ArchiveProgress,
 }
 
 impl std::fmt::Debug for ArchiveWork {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ArchiveWork")
-            .field("in_flight", &self.cancels.len())
+            .field("in_flight", &self.active.len())
             .finish()
     }
 }
@@ -505,21 +576,40 @@ impl ArchiveWork {
         .unwrap_or_else(|_| enzui_core::blocking_task::BlockingTaskOwner::unavailable(queue));
         Self {
             owner,
-            cancels: std::collections::BTreeMap::new(),
+            active: std::collections::BTreeMap::new(),
             generation: 0,
         }
     }
 
+    pub(crate) fn has_active(&self) -> bool {
+        !self.active.is_empty()
+    }
+
+    pub(crate) fn measurements(
+        &self,
+    ) -> impl Iterator<Item = (ActivityKey, ActivityProgress)> + '_ {
+        self.active
+            .iter()
+            .map(|(&key, operation)| (key, operation.progress.activity()))
+    }
+
     fn submit(
         &mut self,
-        key: enzui_core::operation_activity::ActivityKey,
+        key: ActivityKey,
+        progress: ArchiveProgress,
         work: impl FnOnce(&dyn Fn() -> bool) -> ArchiveResult + Send + 'static,
     ) -> enzui_core::blocking_task::BlockingTask<ArchiveResult> {
         self.generation = self.generation.wrapping_add(1);
         let task = self.owner.submit(self.generation, move |context| {
             work(&|| context.is_cancelled())
         });
-        self.cancels.insert(key, task.cancellation());
+        self.active.insert(
+            key,
+            ArchiveOperation {
+                cancellation: task.cancellation(),
+                progress,
+            },
+        );
         task
     }
 
@@ -530,23 +620,35 @@ impl ArchiveWork {
         archive: PathBuf,
         dest_dir: PathBuf,
     ) -> enzui_core::blocking_task::BlockingTask<ArchiveResult> {
-        self.submit(key, move |cancelled| {
-            settle(
-                extract(&archive, &dest_dir, &Limits::default(), cancelled).map(|report| {
-                    let detail = crate::i18n::format(
-                        "files-extracted-1d0a8b32",
-                        &[
-                            (
-                                "arg0",
-                                (crate::i18n::count("files-file-count", report.files)),
-                            ),
-                            ("arg1", (skipped_suffix(report.skipped))),
-                        ],
-                    );
-                    (report.output, detail)
-                }),
-            )
-        })
+        let progress = ExtractProgress::default();
+        self.submit(
+            key,
+            ArchiveProgress::Extract(progress.clone()),
+            move |cancelled| {
+                settle(
+                    extract(
+                        &archive,
+                        &dest_dir,
+                        &Limits::default(),
+                        cancelled,
+                        &progress,
+                    )
+                    .map(|report| {
+                        let detail = crate::i18n::format(
+                            "files-extracted-1d0a8b32",
+                            &[
+                                (
+                                    "arg0",
+                                    (crate::i18n::count("files-file-count", report.files)),
+                                ),
+                                ("arg1", (skipped_suffix(report.skipped))),
+                            ],
+                        );
+                        (report.output, detail)
+                    }),
+                )
+            },
+        )
     }
 
     // Compress `sources` into `dest_dir` on the owner.
@@ -557,10 +659,21 @@ impl ArchiveWork {
         dest_dir: PathBuf,
         format: ArchiveFormat,
     ) -> enzui_core::blocking_task::BlockingTask<ArchiveResult> {
-        self.submit(key, move |cancelled| {
-            settle(
-                compress(&sources, &dest_dir, format, &Limits::default(), cancelled).map(
-                    |report| {
+        let progress = CompressionProgress::default();
+        self.submit(
+            key,
+            ArchiveProgress::Compress(progress.clone()),
+            move |cancelled| {
+                settle(
+                    compress(
+                        &sources,
+                        &dest_dir,
+                        format,
+                        &Limits::default(),
+                        cancelled,
+                        &progress,
+                    )
+                    .map(|report| {
                         let detail = crate::i18n::format(
                             "files-compressed-6fa5970e",
                             &[
@@ -572,18 +685,18 @@ impl ArchiveWork {
                             ],
                         );
                         (report.output, detail)
-                    },
-                ),
-            )
-        })
+                    }),
+                )
+            },
+        )
     }
 
     // Request cancellation of the operation behind `key`; `false` when no
     // archive operation owns that row.
     pub(crate) fn cancel(&mut self, key: enzui_core::operation_activity::ActivityKey) -> bool {
-        match self.cancels.remove(&key) {
-            Some(cancellation) => {
-                cancellation.cancel();
+        match self.active.remove(&key) {
+            Some(operation) => {
+                operation.cancellation.cancel();
                 true
             }
             None => false,
@@ -591,7 +704,7 @@ impl ArchiveWork {
     }
 
     pub(crate) fn settled(&mut self, key: enzui_core::operation_activity::ActivityKey) {
-        self.cancels.remove(&key);
+        self.active.remove(&key);
     }
 }
 

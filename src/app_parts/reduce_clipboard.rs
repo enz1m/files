@@ -1,6 +1,8 @@
 // Clipboard, paste, and conflict reducer arms.
 
 use super::*;
+use enzui_core::operation_activity::ActivityProgress;
+use iced::futures::{SinkExt, StreamExt};
 
 impl App {
     pub(crate) fn reduce_cut_selection(&mut self, message: Msg) -> Task<Msg> {
@@ -317,8 +319,14 @@ impl App {
         if self.native_drop.lease.is_some() && self.native_drop.activity.is_none() {
             self.native_drop.activity = Some((activity, count));
         }
+        if copy {
+            let _ = self.activity_center.progress(
+                activity.key,
+                activity.generation,
+                ActivityProgress::Indeterminate,
+            );
+        }
         self.shell_activity.start(activity, kind, count);
-        // Planning stats every source, so it runs off-thread.
         Task::perform(plan_paste(sources, dest_dir.clone(), copy), move |plan| {
             Msg::PastePlanned {
                 activity,
@@ -354,15 +362,62 @@ impl App {
         } else {
             conflict::ClipMode::Cut
         };
-        // The complete plan includes free destinations as well as conflicts.
-        Task::perform(
-            open_paste_queue(
-                dest_dir,
-                mode,
-                *plan,
-                self.shell_activity.transfer(activity),
-            ),
-            move |queue| Msg::PasteExecuted { activity, queue },
+        if plan.copy_folders.is_empty() {
+            if copy {
+                let total = (plan.clear.len() + plan.conflicts.len() + plan.refused.len()) as u64;
+                let _ = self.activity_center.progress(
+                    activity.key,
+                    activity.generation,
+                    ActivityProgress::Items {
+                        done: 0,
+                        total: Some(total),
+                    },
+                );
+            }
+            return Task::perform(
+                open_paste_queue(
+                    dest_dir,
+                    mode,
+                    *plan,
+                    self.shell_activity.transfer(activity),
+                    |_| {},
+                ),
+                move |queue| Msg::PasteExecuted { activity, queue },
+            );
+        }
+
+        self.model
+            .pending_copy_folders
+            .extend(
+                plan.copy_folders
+                    .iter()
+                    .map(|path| model::PendingCopyFolder {
+                        path: path.clone(),
+                        activity: Some(activity),
+                    }),
+            );
+        let transfer = self.shell_activity.transfer(activity);
+        Task::run(
+            iced::stream::channel(2, async move |mut output| {
+                let (mut progress, mut snapshots) = iced::futures::channel::mpsc::channel(2);
+                let work = open_paste_queue(dest_dir, mode, *plan, transfer, move |fraction| {
+                    let _ = progress.try_send(fraction);
+                });
+                let publish = async {
+                    while let Some(fraction) = snapshots.next().await {
+                        if output
+                            .send(Msg::PasteProgress(activity, fraction))
+                            .await
+                            .is_err()
+                        {
+                            break;
+                        }
+                    }
+                };
+                let (queue, ()) = iced::futures::future::join(work, publish).await;
+                let _ = output.send(Msg::PasteExecuted { activity, queue }).await;
+            }),
+            |message| message,
         )
     }
 
@@ -370,13 +425,32 @@ impl App {
         let Msg::PasteExecuted { activity, queue } = message else {
             unreachable!("misrouted message in reduce_paste_executed");
         };
-        // The free destinations were written by the worker; this only reports.
+        let mut refresh_published_folders = false;
+        self.model.pending_copy_folders.retain_mut(|folder| {
+            if folder.activity != Some(activity) {
+                return true;
+            }
+            let published = self.model.cwd.as_path() == queue.dest_dir
+                && queue
+                    .resolved
+                    .iter()
+                    .any(|item| item.dst == folder.path && item.outcome.changed_destination());
+            if published {
+                folder.activity = None;
+                refresh_published_folders = true;
+            }
+            published
+        });
         self.publish_file_activity_items(activity, &queue);
         if queue.is_open() {
             self.set_file_activity_phase(activity, LivePhase::Waiting);
             self.conflict_activity = Some(activity);
             self.model.conflicts = Some(*queue);
-            return Task::none();
+            return if refresh_published_folders {
+                self.reload()
+            } else {
+                Task::none()
+            };
         }
         // No decision was needed: the whole paste is already done.
         let summary = queue.summary();

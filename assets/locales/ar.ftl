@@ -1,5 +1,8 @@
 files-about-9236a836 = { "عن التطبيق" }
+files-copy-folder-pending = جارٍ النسخ…
+files-activity-compressing = جارٍ ضغط الملفات
 files-activity-downloading = جارٍ تنزيل { $count }
+files-activity-extracting = جارٍ فك ضغط الأرشيف
 files-activity-in-progress = { $count } قيد التنفيذ
 files-apply-download-settings-c38e1204 = { "تطبيق إعدادات التنزيل" }
 files-apply-permissions-d41a5640 = { "تطبيق الأذونات" }

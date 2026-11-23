@@ -12,6 +12,7 @@ use enzui_widgets::breadcrumb::{
 use enzui_widgets::drag_drop_host::{DragHostChannel, enz_drag_drop_host};
 use enzui_widgets::drag_item_surface::{DragSurfaceItem, enz_drag_item_surface};
 use enzui_widgets::enz_text::{TextSize, TextTone, enz_text};
+use enzui_widgets::icon::enz_icon;
 use enzui_widgets::image_widget::{EnzImageFit, enz_image_handle};
 use enzui_widgets::labeled_content::enz_labeled_content;
 use enzui_widgets::list_row_surface::{TrailingVisibility, enz_list_row_surface};
@@ -498,15 +499,20 @@ fn directory_body<'a>(
         return pane.into();
     }
 
-    let body = match model.view_mode {
-        ViewMode::List => list::view_hosted_by(
-            model,
-            theme,
-            content_width,
-            window_height.max(480.0),
-            channel,
-        ),
-        ViewMode::Grid => grid::view_hosted_by(model, theme, window_height.max(480.0), channel),
+    let pending = pending_copy_rows(model, theme);
+    let body = if pending.is_some() && model.visible_provider.rows.is_empty() {
+        iced::widget::Space::new().height(Length::Fill).into()
+    } else {
+        match model.view_mode {
+            ViewMode::List => list::view_hosted_by(
+                model,
+                theme,
+                content_width,
+                window_height.max(480.0),
+                channel,
+            ),
+            ViewMode::Grid => grid::view_hosted_by(model, theme, window_height.max(480.0), channel),
+        }
     };
     // Ctrl+wheel over the file view zooms it instead of scrolling it.
     let body = enz_zoom_wheel(body, Msg::Zoom).into_element();
@@ -514,9 +520,55 @@ fn directory_body<'a>(
     // whose optional child comes after the list, so the list keeps its place
     // in the tree when the strip appears.
     let strip = super::project_strip::strip(model, theme, content_width);
-    let body: Element<'_, Msg> =
-        iced::widget::Column::with_children(std::iter::once(body).chain(strip)).into();
-    body
+    iced::widget::Column::with_children(
+        [
+            pending.unwrap_or_else(|| iced::widget::Space::new().into()),
+            body,
+        ]
+        .into_iter()
+        .chain(strip),
+    )
+    .into()
+}
+
+fn pending_copy_rows<'a>(model: &Model, theme: &EnzTheme) -> Option<Element<'a, Msg>> {
+    let mut paths = model
+        .pending_copy_folders
+        .iter()
+        .filter_map(|folder| {
+            let name = folder.path.file_name()?.to_string_lossy();
+            (folder.path.parent() == Some(model.cwd.as_path())
+                && (!model.search_active || model.search_query.is_empty())
+                && (model.show_hidden || !name.starts_with('.'))
+                && model.entry_for_path(&folder.path).is_none())
+            .then(|| name.into_owned())
+        })
+        .take(3)
+        .peekable();
+    paths.peek()?;
+    let copying = crate::i18n::localizer().text("files-copy-folder-pending");
+    let rows = iced::widget::Column::with_children(paths.map(|name| {
+        container(
+            row![
+                enz_icon("folder").size(18.0).into_element(),
+                enz_text(name)
+                    .single_line_elided()
+                    .width(Length::Fill)
+                    .into_element(),
+                enz_text(copying.clone())
+                    .size(TextSize::Footnote)
+                    .tone(TextTone::Muted)
+                    .into_element(),
+            ]
+            .align_y(Alignment::Center)
+            .mirrored(crate::i18n::rtl())
+            .spacing(theme.spacing.sm()),
+        )
+        .padding([theme.spacing.sm(), theme.spacing.md()])
+        .width(Length::Fill)
+        .into()
+    }));
+    Some(rows.into())
 }
 
 // The id of the tab strip's "all tabs" list trigger.

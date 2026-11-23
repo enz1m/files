@@ -35,7 +35,9 @@ files-acceptance-cc7ee4cb = { "Acceptance" }
 files-accessed-5a700e09 = { "Accessed" }
 files-actions-a9474105 = { $arg0 }{ " actions" }
 files-actions-for-name-3f1d6a2c = { "Actions for " }{ $name }
+files-activity-compressing = Compressing files
 files-activity-downloading = { $count } downloading
+files-activity-extracting = Extracting archive
 files-activity-in-progress = { $count } in progress
 files-add-cloud-drive-974fccb1 = { "Add Cloud Drive" }
 files-add-download-d36edf01 = { "Add download" }
@@ -232,6 +234,7 @@ files-copy-selection-to-folder-921911b2 = { "Copy selection to folder" }
 files-copy-text-to-clipboard-b3672756 = { "copy text to clipboard" }
 files-copy-to-1282143d = { "Copy to…" }
 files-copying-2-items-to-documents-91a84f7c = { "Copying 2 items to Documents" }
+files-copy-folder-pending = Copying…
 files-copying-files-fbf751f0 = { "Copying files" }
 files-copying-items = { $count ->
         [one] Copying { $count } item

@@ -6,6 +6,7 @@
 
 use super::*;
 use crate::archive::{ArchiveFormat, ArchiveResult, ArchiveVerb};
+use enzui_core::operation_activity::ActivityProgress;
 
 impl App {
     pub(crate) fn reduce_extract_archive(&mut self, message: Msg) -> Task<Msg> {
@@ -42,13 +43,14 @@ impl App {
             .file_name()
             .map(|name| name.to_string_lossy().into_owned())
             .unwrap_or_default();
-        let activity = self.start_file_activity(
+        let activity = self.start_service_activity(
             ActivityKind::Other("Extract"),
             crate::i18n::format("files-extracting-name-8eeacd64", &[("name", (name))]),
-            1,
         );
         let now = self.activity_now_ms();
         activity::offer_cancel(&mut self.activity_center, activity, now);
+        self.shell_activity
+            .start_archive(activity, ArchiveVerb::Extract);
         let task = self.archive_work.extract(activity.key, archive, dest_dir);
         Task::perform(task, move |settlement| Msg::ArchiveSettled {
             activity,
@@ -90,16 +92,17 @@ impl App {
             return Task::none();
         }
         let count = sources.len();
-        let activity = self.start_file_activity(
+        let activity = self.start_service_activity(
             ActivityKind::Other("Compress"),
             crate::i18n::format(
                 "files-compressing-count-e5432aa7",
                 &[("count", (count).to_string())],
             ),
-            count,
         );
         let now = self.activity_now_ms();
         activity::offer_cancel(&mut self.activity_center, activity, now);
+        self.shell_activity
+            .start_archive(activity, ArchiveVerb::Compress);
         let task =
             self.archive_work
                 .compress(activity.key, sources, self.model.cwd.clone(), format);
@@ -109,6 +112,47 @@ impl App {
             open_output: false,
             result: settled_result(settlement),
         })
+    }
+
+    pub(crate) fn update_archive_progress(&mut self) -> Task<Msg> {
+        let mut updated = false;
+        for (key, measurement) in self.archive_work.measurements() {
+            let ActivityProgress::Bytes {
+                done,
+                total: Some(total),
+            } = measurement
+            else {
+                continue;
+            };
+            let Some(row) = self.activity_center.get(key) else {
+                continue;
+            };
+            if done == 0 {
+                continue;
+            }
+            // The byte count reaches its total before the archive is published.
+            let done = done.min(total - total.div_ceil(100));
+            let progress = ActivityProgress::Bytes {
+                done,
+                total: Some(total),
+            };
+            if row.progress != progress {
+                let activity = activity::FileActivity {
+                    key,
+                    generation: row.generation,
+                };
+                let _ = self
+                    .activity_center
+                    .progress(key, activity.generation, progress);
+                self.shell_activity.archive_progress(activity, done, total);
+                updated = true;
+            }
+        }
+        if updated {
+            self.main_window_scope()
+        } else {
+            iced::window::invalidate(iced::window::Invalidation::none())
+        }
     }
 
     pub(crate) fn reduce_archive_settled(&mut self, message: Msg) -> Task<Msg> {

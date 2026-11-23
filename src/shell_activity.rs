@@ -1,6 +1,4 @@
-// App-owned shell publication for file transfers and downloads.
-
-use crate::{activity::FileActivity, conflict};
+use crate::{activity::FileActivity, archive::ArchiveVerb, conflict};
 use enzui_activity::{
     CenterJobs, Job, Outcome, Progress, Publisher, State, Status, Unit, Visibility,
 };
@@ -26,6 +24,15 @@ impl ShellActivity {
         }
     }
 
+    #[cfg(test)]
+    pub(crate) fn with_test_publisher(publisher: Publisher, tag: String) -> Self {
+        Self {
+            publisher: Some(publisher),
+            queued_tag: Some(tag),
+            ..Self::default()
+        }
+    }
+
     pub(crate) fn pending_tag(&self) -> Option<&str> {
         self.publisher.as_ref()?;
         self.pending_tag.as_deref()
@@ -47,12 +54,37 @@ impl ShellActivity {
             ActivityKind::Move => crate::i18n::tr("Moving files"),
             _ => return,
         };
+        self.start_job(activity, label, total, kind != ActivityKind::Copy);
+    }
+
+    pub(crate) fn start_archive(&mut self, activity: FileActivity, verb: ArchiveVerb) {
+        let message = match verb {
+            ArchiveVerb::Compress => "files-activity-compressing",
+            ArchiveVerb::Extract => "files-activity-extracting",
+        };
+        self.start_job(activity, &crate::i18n::localizer().text(message), 0, false);
+    }
+
+    pub(crate) fn archive_progress(&self, activity: FileActivity, done: u64, total: u64) {
+        if let Some(transfer) = self.jobs.get(&(activity.key.op, activity.generation.0)) {
+            let _ = transfer.job.set_progress(
+                Some(Progress {
+                    done,
+                    total,
+                    unit: Unit::Bytes,
+                }),
+                None,
+            );
+        }
+    }
+
+    fn start_job(&mut self, activity: FileActivity, label: &str, total: usize, determinate: bool) {
         let Some(publisher) = &self.publisher else {
             return;
         };
         let status = Status {
             window_token: self.queued_tag.clone(),
-            progress: (total > 0).then_some(Progress {
+            progress: (determinate && total > 0).then_some(Progress {
                 done: 0,
                 total: total as u64,
                 unit: Unit::Items,
@@ -144,6 +176,18 @@ impl Transfer {
             });
             let _ = self.job.set_progress(progress, None);
         }
+    }
+
+    pub(crate) fn copy_progress(&self, fraction: f32) {
+        let total = 1000;
+        let _ = self.job.set_progress(
+            Some(Progress {
+                done: (fraction * total as f32).round() as u64,
+                total,
+                unit: Unit::Steps,
+            }),
+            None,
+        );
     }
 
     pub(crate) fn settle(&self, queue: &conflict::ConflictQueue) {

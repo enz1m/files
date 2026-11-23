@@ -658,7 +658,9 @@ mod bulk_rename;
 mod publish;
 #[path = "services_parts/stage.rs"]
 mod stage;
-pub(crate) use publish::{perform_conflict_choice, plan_paste, plan_trash_restore};
+#[cfg(test)]
+pub(crate) use publish::perform_conflict_choice;
+pub(crate) use publish::{perform_conflict_choice_with_progress, plan_paste, plan_trash_restore};
 pub(crate) use stage::rename_paths_no_replace;
 pub(crate) use stage::{
     is_cross_filesystem_error, move_merging, move_replacing, rename_reversing,

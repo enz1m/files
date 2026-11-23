@@ -100,6 +100,7 @@ impl Model {
             cloud_providers: Vec::new(),
             focus_after_load: None,
             conflicts: None,
+            pending_copy_folders: Vec::new(),
             clipboard_pending: false,
             context_menu: None,
             journal: crate::journal::OpJournal::new(),

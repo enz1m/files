@@ -210,3 +210,47 @@ fn a_paste_reply_cannot_follow_navigation_away_and_back() {
     assert!(fx.paths.iter().all(|p| p.exists()));
     assert_eq!(std::fs::read_dir(&fx.dst).unwrap().count(), 0);
 }
+
+#[test]
+fn folder_paste_shows_a_pending_row_and_reports_work_inside_the_folder() {
+    let fx = Fixture::new("folder-progress");
+    let source = fx.src.join("folder");
+    let target = fx.dst.join("folder");
+    let (mut app, _) = fx.app();
+    let plan = services::plan_paste(&[source], &fx.dst, conflict::ClipMode::Copy);
+    let activity = app.start_file_activity(ActivityKind::Copy, "Copying files", 1);
+    let task = app.update(Msg::PastePlanned {
+        activity,
+        dest_dir: fx.dst.clone(),
+        copy: true,
+        plan: Box::new(plan),
+    });
+
+    assert!(
+        app.model
+            .pending_copy_folders
+            .iter()
+            .any(|folder| { folder.path == target && folder.activity == Some(activity) })
+    );
+    let messages = drive(&mut app, task);
+    let progress = messages
+        .iter()
+        .position(|message| {
+            matches!(message, Msg::PasteProgress(token, fraction)
+                if *token == activity && *fraction > 0.0 && *fraction < 1.0)
+        })
+        .expect("the folder published intermediate progress");
+    let completed = messages
+        .iter()
+        .position(|message| {
+            matches!(message, Msg::PasteExecuted { activity: token, .. } if *token == activity)
+        })
+        .expect("the folder copy finished");
+    assert!(progress < completed);
+    assert_eq!(
+        std::fs::read(target.join("nested.txt")).unwrap(),
+        b"nested-file"
+    );
+    assert!(app.model.pending_copy_folders.is_empty());
+    assert!(app.model.entry_for_path(&target).is_some());
+}

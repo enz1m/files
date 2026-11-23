@@ -1,8 +1,11 @@
 files-about-9236a836 = { "Info" }
+files-copy-folder-pending = Wird kopiert…
+files-activity-compressing = Dateien werden komprimiert
 files-activity-downloading = { $count ->
         [one] { $count } Download läuft
        *[other] { $count } Downloads laufen
     }
+files-activity-extracting = Archiv wird entpackt
 files-activity-in-progress = { $count } in Bearbeitung
 files-apply-download-settings-c38e1204 = { "Downloadeinstellungen anwenden" }
 files-apply-permissions-d41a5640 = { "Berechtigungen anwenden" }

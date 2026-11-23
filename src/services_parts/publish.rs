@@ -1,7 +1,8 @@
 // Publish with backup, copy, paste plans, and conflict choices.
 
 use super::stage::{
-    MoveSeams, PublishOutcome, STAGE_RESERVE_RETRIES, describe_special_type, stage_source_and_flush,
+    MoveSeams, PublishOutcome, STAGE_RESERVE_RETRIES, describe_special_type,
+    stage_source_and_flush_with_progress,
 };
 use super::*;
 
@@ -217,7 +218,11 @@ pub(crate) fn remove_stage_residue_fallible(path: &Path) -> io::Result<()> {
 // Owns every nested create, so a symlink race after `dst` exists still lands each
 // child under the caller's name. FIFOs, sockets, devices and entry read errors
 // abort before `stage_cross_fs_replace` replaces the destination.
-pub(crate) fn copy_tree_into(src: &Path, dst: &Path) -> Result<(), String> {
+pub(crate) fn copy_tree_into(
+    src: &Path,
+    dst: &Path,
+    entry_copied: &mut dyn FnMut(),
+) -> Result<(), String> {
     let rd = std::fs::read_dir(src).map_err(|e| e.to_string())?;
     for dent in rd {
         let dent = dent.map_err(|e| {
@@ -238,7 +243,7 @@ pub(crate) fn copy_tree_into(src: &Path, dst: &Path) -> Result<(), String> {
             std::os::unix::fs::symlink(&target, &child_dst).map_err(|e| e.to_string())?;
         } else if ft.is_dir() {
             create_private_dir(&child_dst).map_err(|e| e.to_string())?;
-            copy_tree_into(&child_src, &child_dst)?;
+            copy_tree_into(&child_src, &child_dst, entry_copied)?;
             finish_copied_dir(&md, &child_dst).map_err(|e| e.to_string())?;
         } else if ft.is_file() {
             copy_file_preserving(&child_src, &child_dst).map_err(|e| e.to_string())?;
@@ -251,6 +256,7 @@ pub(crate) fn copy_tree_into(src: &Path, dst: &Path) -> Result<(), String> {
                 ],
             ));
         }
+        entry_copied();
     }
     Ok(())
 }
@@ -393,7 +399,8 @@ pub(crate) fn plan_paste(
             continue;
         };
         let mut dst = dest_dir.join(name);
-        if crate::conflict::is_real_dir(src) && is_within(dest_dir, src) {
+        let is_dir = crate::conflict::is_real_dir(src);
+        if is_dir && is_within(dest_dir, src) {
             // Copying would re-enter its own output until the path is too long;
             // moving cannot work at all.
             plan.refused.push((
@@ -426,6 +433,9 @@ pub(crate) fn plan_paste(
             });
         } else {
             reserved.insert(dst.clone());
+            if is_dir && mode == crate::conflict::ClipMode::Copy {
+                plan.copy_folders.insert(dst.clone());
+            }
             plan.clear.push((src.clone(), dst));
         }
     }
@@ -559,7 +569,16 @@ pub(crate) fn copy_replacing(src: &Path, dst: &Path) -> Result<(), String> {
 
 // Copy preserves source bytes for every publication outcome, including retained-backup and durability failures.
 pub(crate) fn copy_replacing_with(src: &Path, dst: &Path, seams: MoveSeams) -> Result<(), String> {
-    let staged = stage_source_and_flush(src, dst, &seams)?;
+    copy_replacing_with_progress(src, dst, seams, &mut || {})
+}
+
+fn copy_replacing_with_progress(
+    src: &Path,
+    dst: &Path,
+    seams: MoveSeams,
+    entry_copied: &mut dyn FnMut(),
+) -> Result<(), String> {
+    let staged = stage_source_and_flush_with_progress(src, dst, &seams, entry_copied)?;
     match publish_with_backup(&staged, dst, &seams) {
         PublishOutcome::Published => Ok(()),
         PublishOutcome::PublishedBackupRetained {
@@ -665,11 +684,22 @@ pub(crate) fn copy_merging_with(src: &Path, dst: &Path, seams: MoveSeams) -> Res
 // A `Cut` moves and a `Copy` writes byte copies; `Skip` never arrives here.
 //
 // [`ClipMode`]: crate::conflict::ClipMode
+#[cfg(test)]
 pub(crate) fn perform_conflict_choice(
     src: &Path,
     dst: &Path,
     choice: crate::conflict::ConflictChoice,
     mode: crate::conflict::ClipMode,
+) -> crate::conflict::ItemOutcome {
+    perform_conflict_choice_with_progress(src, dst, choice, mode, &mut || {})
+}
+
+pub(crate) fn perform_conflict_choice_with_progress(
+    src: &Path,
+    dst: &Path,
+    choice: crate::conflict::ConflictChoice,
+    mode: crate::conflict::ClipMode,
+    entry_copied: &mut dyn FnMut(),
 ) -> crate::conflict::ItemOutcome {
     use crate::conflict::{ClipMode, ConflictChoice, ItemOutcome};
     match (mode, choice) {
@@ -697,7 +727,7 @@ pub(crate) fn perform_conflict_choice(
             }
         }
         (ClipMode::Copy, ConflictChoice::Place) => {
-            match copy_replacing_with(src, dst, MoveSeams::PLACE) {
+            match copy_replacing_with_progress(src, dst, MoveSeams::PLACE, entry_copied) {
                 Ok(()) => ItemOutcome::Copied,
                 Err(e) => ItemOutcome::Failed(e),
             }

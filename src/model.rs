@@ -381,6 +381,7 @@ pub(crate) struct Model {
     pub(crate) screen: Screen,
     // Entries for the current directory, before sorting and filtering.
     pub(crate) entries: Vec<FileEntry>,
+    pub(crate) pending_copy_folders: Vec<PendingCopyFolder>,
     pub(crate) load_error: Option<String>,
     // Id of the most recently dispatched directory read, from [`Model::begin_load`].
     //
@@ -794,4 +795,10 @@ pub(crate) enum SettingsMenu {
     SortBy,
     SortOrder,
     View,
+}
+
+#[derive(Debug)]
+pub(crate) struct PendingCopyFolder {
+    pub(crate) path: PathBuf,
+    pub(crate) activity: Option<crate::activity::FileActivity>,
 }

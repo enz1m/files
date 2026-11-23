@@ -464,7 +464,7 @@ pub(crate) enum Msg {
         path: PathBuf,
         result: Result<Option<String>, String>,
     },
-    // An archive operation settled on its worker.
+    ArchiveProgress,
     ArchiveSettled {
         activity: crate::activity::FileActivity,
         verb: crate::archive::ArchiveVerb,
@@ -496,6 +496,7 @@ pub(crate) enum Msg {
         copy: bool,
         plan: Box<crate::conflict::PastePlan>,
     },
+    PasteProgress(crate::activity::FileActivity, f32),
     // The paste's non-conflicting moves or copies finished on the worker and
     // the conflict queue is built; what remains is the conflict prompt or
     // the summary.

@@ -95,7 +95,13 @@ impl Fixture {
             plan: Box::new(plan.clone()),
         });
         if !empty {
-            let queue = block_on(crate::open_paste_queue(self.dst.clone(), mode, plan, None));
+            let queue = block_on(crate::open_paste_queue(
+                self.dst.clone(),
+                mode,
+                plan,
+                None,
+                |_| {},
+            ));
             let _ = app.update(Msg::PasteExecuted { activity, queue });
         }
     }

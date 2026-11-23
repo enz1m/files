@@ -120,6 +120,7 @@ impl ItemOutcome {
 pub(crate) struct PastePlan {
     // `(src, dst)` pairs whose destination is free.
     pub(crate) clear: Vec<(PathBuf, PathBuf)>,
+    pub(crate) copy_folders: std::collections::BTreeSet<PathBuf>,
     // Destinations that already exist and need a decision.
     pub(crate) conflicts: Vec<Conflict>,
     // `(src, dst, reason)` items refused outright, such as a folder pasted

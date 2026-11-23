@@ -404,6 +404,7 @@ impl App {
             Msg::CompressSelection(..) => self.reduce_compress_selection(message),
             Msg::OpenArchiveExternally(path) => self.start_extract_archive(path, None, true),
             Msg::ArchiveHandlerResolved { .. } => self.nav_archive_handler_resolved(message),
+            Msg::ArchiveProgress => self.update_archive_progress(),
             Msg::ArchiveSettled { .. } => self.reduce_archive_settled(message),
             Msg::MeasureFolder(..) => self.reduce_measure_folder(message),
             Msg::CancelFolderMeasure(..) => self.reduce_cancel_folder_measure(message),
@@ -430,6 +431,14 @@ impl App {
             Msg::ContextRowActivated(..) => self.reduce_context_row_activated(message),
             Msg::BeginPaste { .. } => self.reduce_begin_paste(message),
             Msg::PastePlanned { .. } => self.reduce_paste_planned(message),
+            Msg::PasteProgress(activity, fraction) => {
+                let _ = self.activity_center.progress(
+                    activity.key,
+                    activity.generation,
+                    enzui_core::operation_activity::ActivityProgress::Fraction(fraction),
+                );
+                Task::none()
+            }
             Msg::PasteExecuted { .. } => self.reduce_paste_executed(message),
             Msg::SetApplyToAllConflicts(..) => self.reduce_set_apply_to_all_conflicts(message),
             Msg::PauseConflicts => self.reduce_pause_conflicts(message),

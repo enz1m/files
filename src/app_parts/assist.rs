@@ -179,15 +179,20 @@ impl App {
         token: activity::FileActivity,
         queue: &conflict::ConflictQueue,
     ) {
-        if let Some(row) = self.activity_center.get(token.key)
-            && let enzui_core::operation_activity::ActivityProgress::Items { total, .. } =
-                row.progress
-        {
+        use enzui_core::operation_activity::ActivityProgress;
+        if let Some(row) = self.activity_center.get(token.key) {
+            let total = match row.progress {
+                ActivityProgress::Items { total, .. } => total,
+                _ if queue.is_open() => {
+                    Some((queue.resolved.len() + queue.remaining.len() + 1) as u64)
+                }
+                _ => return,
+            };
             let done = queue.completed_items() as u64;
             let _ = self.activity_center.progress(
                 token.key,
                 token.generation,
-                enzui_core::operation_activity::ActivityProgress::Items { done, total },
+                ActivityProgress::Items { done, total },
             );
         }
     }

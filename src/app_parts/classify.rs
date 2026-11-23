@@ -625,17 +625,30 @@ fn transfer_scope() -> enzui_services::process_transport::BackgroundScope {
     enzui_services::process_transport::BackgroundScope::worker("files-copy")
 }
 
-// Performs one in-process paste item on a thread lowered by
-// [`enzui_services::process_transport::run_on_lowered_thread`].
+fn transfer_entry_count(path: &Path) -> std::io::Result<u64> {
+    let mut count = 1u64;
+    for entry in std::fs::read_dir(path)? {
+        let entry = entry?;
+        let entries = if entry.file_type()?.is_dir() {
+            transfer_entry_count(&entry.path())?
+        } else {
+            1
+        };
+        count = count.saturating_add(entries);
+    }
+    Ok(count)
+}
+
 fn perform_transfer(
     src: &Path,
     dst: &Path,
     choice: conflict::ConflictChoice,
     mode: conflict::ClipMode,
+    entry_copied: &mut dyn FnMut(),
 ) -> conflict::ItemOutcome {
     #[cfg(test)]
     transfer_priority::record(dst);
-    services::perform_conflict_choice(src, dst, choice, mode)
+    services::perform_conflict_choice_with_progress(src, dst, choice, mode, entry_copied)
 }
 
 // Builds the complete paste queue on Files' bounded shell worker pool.
@@ -646,18 +659,47 @@ fn perform_transfer(
 pub(crate) fn open_paste_queue(
     dest_dir: PathBuf,
     mode: conflict::ClipMode,
-    plan: conflict::PastePlan,
+    mut plan: conflict::PastePlan,
     mut status: Option<shell_activity::Transfer>,
+    mut report: impl FnMut(f32) + Send + 'static,
 ) -> impl std::future::Future<Output = Box<conflict::ConflictQueue>> + Send + 'static {
     crate::shell_work::run(move || {
         let queue =
             enzui_services::process_transport::run_on_lowered_thread(&transfer_scope(), || {
+                let folders = std::mem::take(&mut plan.copy_folders);
+                let total = (plan.clear.len() + plan.conflicts.len() + plan.refused.len()) as f32;
+                let mut completed = 0.0;
+                let mut last_report = None::<std::time::Instant>;
                 conflict::ConflictQueue::from_plan(
                     dest_dir,
                     mode,
                     plan,
                     &mut |src, dst, choice, mode| {
-                        let outcome = perform_transfer(src, dst, choice, mode);
+                        let count = folders
+                            .contains(dst)
+                            .then(|| transfer_entry_count(src).ok())
+                            .flatten();
+                        let mut staged = 0u64;
+                        let outcome = perform_transfer(src, dst, choice, mode, &mut || {
+                            if let Some(count) = count {
+                                staged += 1;
+                                if last_report.is_none_or(|at| {
+                                    at.elapsed() >= std::time::Duration::from_millis(125)
+                                }) {
+                                    // Keep progress below completion until the staged folder is published.
+                                    let item = (staged as f32 / count as f32).min(0.99);
+                                    let progress = (completed + item) / total;
+                                    report(progress);
+                                    if let Some(status) = &status {
+                                        status.copy_progress(progress);
+                                    }
+                                    last_report = Some(std::time::Instant::now());
+                                }
+                            }
+                        });
+                        if outcome.changed_destination() {
+                            completed += 1.0;
+                        }
                         if let Some(status) = &mut status {
                             status.performed(&outcome);
                         }
@@ -685,7 +727,7 @@ pub(crate) fn resolve_conflict(
         }
         enzui_services::process_transport::run_on_lowered_thread(&transfer_scope(), || {
             queue.resolve(choice, &mut |src, dst, choice, mode| {
-                let outcome = perform_transfer(src, dst, choice, mode);
+                let outcome = perform_transfer(src, dst, choice, mode, &mut || {});
                 if let Some(status) = &mut status {
                     status.performed(&outcome);
                 }

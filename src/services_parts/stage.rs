@@ -337,12 +337,17 @@ pub(crate) const STAGE_RESERVE_RETRIES: usize = 8;
 //
 // Retries on `EEXIST` up to [`STAGE_RESERVE_RETRIES`] times; other errors
 // abort. Returns the reserved path.
-fn stage_source_exclusive(src_kind: &SourceKind, src: &Path, dst: &Path) -> io::Result<PathBuf> {
+fn stage_source_exclusive(
+    src_kind: &SourceKind,
+    src: &Path,
+    dst: &Path,
+    entry_copied: &mut dyn FnMut(),
+) -> io::Result<PathBuf> {
     for _ in 0..STAGE_RESERVE_RETRIES {
         let candidate = marker_sibling(dst, "files-app-stage")?;
         let result = match src_kind {
             SourceKind::File => reserve_and_copy_file(src, &candidate),
-            SourceKind::Dir => reserve_and_copy_dir(src, &candidate),
+            SourceKind::Dir => reserve_and_copy_dir(src, &candidate, entry_copied),
             SourceKind::Symlink(target) => reserve_and_create_symlink(target, &candidate),
             SourceKind::Unsupported(msg) => {
                 return Err(io::Error::new(io::ErrorKind::InvalidInput, msg.clone()));
@@ -381,9 +386,13 @@ fn reserve_and_copy_file(src: &Path, staged: &Path) -> io::Result<()> {
     Ok(())
 }
 
-fn reserve_and_copy_dir(src: &Path, staged: &Path) -> io::Result<()> {
+fn reserve_and_copy_dir(
+    src: &Path,
+    staged: &Path,
+    entry_copied: &mut dyn FnMut(),
+) -> io::Result<()> {
     super::publish::create_private_dir(staged)?;
-    let result = copy_tree_into(src, staged)
+    let result = copy_tree_into(src, staged, entry_copied)
         .map_err(io::Error::other)
         .and_then(|()| super::publish::finish_copied_dir(&src.metadata()?, staged));
     if result.is_err() {
@@ -551,7 +560,15 @@ pub(crate) fn stage_source_and_flush(
     dst: &Path,
     seams: &MoveSeams,
 ) -> Result<PathBuf, String> {
-    // Rejects FIFOs, sockets and devices before any mutation.
+    stage_source_and_flush_with_progress(src, dst, seams, &mut || {})
+}
+
+pub(crate) fn stage_source_and_flush_with_progress(
+    src: &Path,
+    dst: &Path,
+    seams: &MoveSeams,
+    entry_copied: &mut dyn FnMut(),
+) -> Result<PathBuf, String> {
     let src_kind = classify_source(src).map_err(|e| e.to_string())?;
     if let SourceKind::Unsupported(msg) = &src_kind {
         return Err(msg.clone());
@@ -567,7 +584,7 @@ pub(crate) fn stage_source_and_flush(
             }
         }
     } else {
-        stage_source_exclusive(&src_kind, src, dst).map_err(|e| e.to_string())?
+        stage_source_exclusive(&src_kind, src, dst, entry_copied).map_err(|e| e.to_string())?
     };
 
     if let Err(err) = fsync_staged(&staged) {

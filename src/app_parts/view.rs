@@ -313,6 +313,12 @@ impl App {
         if !self.model.storage_capture {
             subscriptions.push(crate::storage::subscription().map(Msg::StorageLoaded));
         }
+        if self.archive_work.has_active() {
+            subscriptions.push(
+                iced::time::every(std::time::Duration::from_millis(150))
+                    .map(|_| Msg::ArchiveProgress),
+            );
+        }
         if let Some(deadline) = self.activity_schedule.armed_deadline() {
             let remaining = deadline.saturating_sub(self.activity_now_ms()).max(1);
             subscriptions.push(
