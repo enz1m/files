@@ -64,7 +64,14 @@ pub(crate) fn conflicts<'a>(
         .size(TextSize::Body)
         .into_element(),
         enz_labeled_content_compact(crate::i18n::tr("Destination folder"))
-            .value(queue.dest_dir.display().to_string())
+            .value(
+                current
+                    .dst
+                    .parent()
+                    .unwrap_or(&queue.dest_dir)
+                    .display()
+                    .to_string(),
+            )
             .into_element(),
         enz_text(queue.position_label())
             .size(TextSize::Footnote)

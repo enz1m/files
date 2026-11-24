@@ -733,6 +733,7 @@ pub(crate) fn resolve_conflict(
                 }
                 outcome
             });
+            services::remove_emptied_merge_sources(&mut queue.merged_sources);
         });
         if let Some(status) = &status {
             status.settle(&queue);

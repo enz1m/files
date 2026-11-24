@@ -361,18 +361,22 @@ pub(crate) fn move_to_trash_with(
     match fs::rename(source, &dest_payload) {
         Ok(()) => Ok(dest_payload),
         Err(e) if e.raw_os_error() == Some(libc::EXDEV) => {
-            // Copy everything first; the source goes only once the trashed
-            // copy is complete, so a failure never leaves part of it in the
-            // trash without an entry.
-            if let Err(err) = copy_across(source, &dest_payload) {
-                let _ = remove_entry(&dest_payload);
-                let _ = fs::remove_file(&dest_info);
-                return Err(TrashError::Io(err.to_string()));
+            let copied_source = match copy_across(source, &dest_payload, &dest_info) {
+                Ok(copied) => copied,
+                Err(err) => {
+                    let _ = fs::remove_file(&dest_info);
+                    return Err(TrashError::Io(err));
+                }
+            };
+            // The trashed copy is whole, durable and listed; only the source
+            // entries it holds are removed, and anything else is reported.
+            match copied_source.remove_from(source) {
+                Ok(()) => Ok(dest_payload),
+                Err(kept) => Err(TrashError::Io(crate::services::source_kept(
+                    &dest_payload,
+                    &kept,
+                ))),
             }
-            // The trashed copy is whole and listed; a removal failure leaves
-            // the rest of the source in place and says so.
-            remove_entry(source).map_err(|err| TrashError::Io(err.to_string()))?;
-            Ok(dest_payload)
         }
         Err(e) => {
             let _ = fs::remove_file(&dest_info);
@@ -570,33 +574,26 @@ fn reserve_payload_and_info_names_descriptor_relative(
     ))
 }
 
-// Copies `src` to `dst` across filesystems, then removes `src`.
-// Copies `src` to the new `dst` without touching `src`.
-fn copy_across(src: &Path, dst: &Path) -> io::Result<()> {
-    let md = fs::symlink_metadata(src)?;
-    let ty = md.file_type();
-    if ty.is_dir() {
-        fs::create_dir(dst)?;
-        for entry in fs::read_dir(src)? {
-            let entry = entry?;
-            copy_across(&entry.path(), &dst.join(entry.file_name()))?;
-        }
-        fs::set_permissions(dst, md.permissions())?;
-    } else if ty.is_symlink() {
-        std::os::unix::fs::symlink(fs::read_link(src)?, dst)?;
-    } else {
-        fs::copy(src, dst)?;
+// Copies `source` to the new `payload` and makes it and the already written
+// `info` durable, leaving `source` untouched. FIFOs, sockets and devices are
+// refused, since opening one can block indefinitely.
+fn copy_across(
+    source: &Path,
+    payload: &Path,
+    info: &Path,
+) -> Result<crate::services::CopiedSources, String> {
+    let copied = crate::services::copy_new_for_move(source, payload)?;
+    let synced = fs::File::open(info)
+        .and_then(|file| file.sync_all())
+        .and_then(|()| match info.parent() {
+            Some(parent) => fs::File::open(parent)?.sync_all(),
+            None => Ok(()),
+        });
+    if let Err(err) = synced {
+        let _ = crate::services::remove_stage_residue_fallible(payload);
+        return Err(err.to_string());
     }
-    Ok(())
-}
-
-// Removes a file, link or whole folder without following links.
-fn remove_entry(path: &Path) -> io::Result<()> {
-    if fs::symlink_metadata(path)?.is_dir() {
-        fs::remove_dir_all(path)
-    } else {
-        fs::remove_file(path)
-    }
+    Ok(copied)
 }
 
 // URL-escapes the raw path bytes for `Path=`, as the trash spec asks and as

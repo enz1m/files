@@ -1,9 +1,9 @@
 // Staging, seams, and cross-filesystem move replacing.
 
 use super::publish::{
-    copy_tree_into, fsync_dir, fsync_staged, marker_sibling, publish_with_backup,
-    remove_source_entry, remove_stage_residue_fallible, remove_stage_residue_report,
-    reserve_unused_sibling,
+    CopiedSources, copy_tree_into, fsync_dir, fsync_staged, marker_sibling, publish_with_backup,
+    remove_stage_residue_fallible, remove_stage_residue_report, reserve_unused_sibling,
+    source_kept,
 };
 use super::*;
 
@@ -186,16 +186,6 @@ fn finish_fast_path_move(src: &Path, dst: &Path, seams: &MoveSeams) -> Result<()
     Ok(())
 }
 
-// Merges directory `src` into `dst`, keeping existing contents unless a name
-// collides.
-//
-// Used for `ConflictChoice::Merge`. Colliding files are replaced through
-// [`move_replacing`]'s stage-and-publish contract; colliding directories
-// recurse. `src` is removed once empty. Blocks on filesystem I/O.
-pub(crate) fn move_merging(src: &Path, dst: &Path) -> Result<(), String> {
-    move_merging_with(src, dst, MoveSeams::PRODUCTION)
-}
-
 // Generic `std::fs::rename` does not coerce to the `MoveSeams` fn-pointer type.
 fn rename_paths(src: &Path, dst: &Path) -> io::Result<()> {
     std::fs::rename(src, dst)
@@ -226,48 +216,6 @@ pub(crate) fn rename_paths_no_replace(src: &Path, dst: &Path) -> io::Result<()> 
     }
 }
 
-// [`move_merging`] parameterised by [`MoveSeams`]; recurses with the same seams.
-pub(crate) fn move_merging_with(src: &Path, dst: &Path, seams: MoveSeams) -> Result<(), String> {
-    use crate::conflict::is_real_dir;
-    if !is_real_dir(src) || !is_real_dir(dst) {
-        return move_replacing_with(src, dst, seams);
-    }
-    // Propagate per-entry read errors: `.flatten()` would silently move an
-    // incomplete tree.
-    let rd = std::fs::read_dir(src).map_err(|e| e.to_string())?;
-    for dent in rd {
-        let dent = dent.map_err(|e| {
-            crate::i18n::format(
-                "files-aborting-merge-of-into-could-not-5c2514a6",
-                &[
-                    ("arg0", (src.display()).to_string()),
-                    ("arg1", (dst.display()).to_string()),
-                    ("e", (e).to_string()),
-                ],
-            )
-        })?;
-        let child_src = dent.path();
-        let child_dst = dst.join(dent.file_name());
-        if is_real_dir(&child_src) && is_real_dir(&child_dst) {
-            move_merging_with(&child_src, &child_dst, seams)?;
-        } else {
-            move_replacing_with(&child_src, &child_dst, seams)?;
-        }
-    }
-    // A leftover entry the app did not create (hidden file, racing writer)
-    // must surface as an error, not success.
-    std::fs::remove_dir(src).map_err(|e| {
-        crate::i18n::format(
-            "files-merged-children-of-into-but-the-07f3eb1b",
-            &[
-                ("arg0", (src.display()).to_string()),
-                ("arg1", (dst.display()).to_string()),
-                ("e", (e).to_string()),
-            ],
-        )
-    })
-}
-
 // Decided on the raw errno, not a localised message.
 fn is_exdev(err: &io::Error) -> bool {
     err.raw_os_error() == Some(libc::EXDEV)
@@ -287,7 +235,7 @@ fn is_stageable_same_fs_error(err: &io::Error) -> bool {
 enum SourceKind {
     File,
     Dir,
-    Symlink(PathBuf),
+    Symlink,
     Unsupported(String),
 }
 
@@ -295,8 +243,7 @@ fn classify_source(src: &Path) -> io::Result<SourceKind> {
     let md = src.symlink_metadata()?;
     let ft = md.file_type();
     if ft.is_symlink() {
-        let target = std::fs::read_link(src)?;
-        Ok(SourceKind::Symlink(target))
+        Ok(SourceKind::Symlink)
     } else if ft.is_dir() {
         Ok(SourceKind::Dir)
     } else if ft.is_file() {
@@ -336,25 +283,17 @@ pub(crate) const STAGE_RESERVE_RETRIES: usize = 8;
 // symlink race cannot redirect the copy.
 //
 // Retries on `EEXIST` up to [`STAGE_RESERVE_RETRIES`] times; other errors
-// abort. Returns the reserved path.
+// abort. Returns the reserved path and the source entries it copied.
 fn stage_source_exclusive(
     src_kind: &SourceKind,
     src: &Path,
     dst: &Path,
     entry_copied: &mut dyn FnMut(),
-) -> io::Result<PathBuf> {
+) -> io::Result<(PathBuf, CopiedSources)> {
     for _ in 0..STAGE_RESERVE_RETRIES {
         let candidate = marker_sibling(dst, "files-app-stage")?;
-        let result = match src_kind {
-            SourceKind::File => reserve_and_copy_file(src, &candidate),
-            SourceKind::Dir => reserve_and_copy_dir(src, &candidate, entry_copied),
-            SourceKind::Symlink(target) => reserve_and_create_symlink(target, &candidate),
-            SourceKind::Unsupported(msg) => {
-                return Err(io::Error::new(io::ErrorKind::InvalidInput, msg.clone()));
-            }
-        };
-        match result {
-            Ok(()) => return Ok(candidate),
+        match copy_source_exclusive(src_kind, src, &candidate, entry_copied) {
+            Ok(copied) => return Ok((candidate, copied)),
             Err(e) if e.raw_os_error() == Some(libc::EEXIST) => continue,
             Err(e) => return Err(e),
         }
@@ -368,41 +307,81 @@ fn stage_source_exclusive(
     )))
 }
 
-fn reserve_and_copy_file(src: &Path, staged: &Path) -> io::Result<()> {
+// Copies `src` to the new name `staged`, created exclusively, and removes
+// whatever it created on failure. `EEXIST` means the name was taken.
+fn copy_source_exclusive(
+    src_kind: &SourceKind,
+    src: &Path,
+    staged: &Path,
+    entry_copied: &mut dyn FnMut(),
+) -> io::Result<CopiedSources> {
+    let mut copied = CopiedSources::default();
+    match src_kind {
+        SourceKind::File => reserve_and_copy_file(src, staged, &mut copied)?,
+        SourceKind::Dir => reserve_and_copy_dir(src, staged, entry_copied, &mut copied)?,
+        SourceKind::Symlink => {
+            let md = src.symlink_metadata()?;
+            std::os::unix::fs::symlink(std::fs::read_link(src)?, staged)?;
+            copied.record(src, &md);
+        }
+        SourceKind::Unsupported(msg) => {
+            return Err(io::Error::new(io::ErrorKind::InvalidInput, msg.clone()));
+        }
+    }
+    Ok(copied)
+}
+
+// Copies `src` to the new path `dst` and syncs it, refusing FIFOs, sockets and
+// devices. Returns the source entries copied, for removing exactly those.
+pub(crate) fn copy_new_for_move(src: &Path, dst: &Path) -> Result<CopiedSources, String> {
+    let src_kind = classify_source(src).map_err(|e| e.to_string())?;
+    if let SourceKind::Unsupported(msg) = &src_kind {
+        return Err(msg.clone());
+    }
+    let copied =
+        copy_source_exclusive(&src_kind, src, dst, &mut || {}).map_err(|e| e.to_string())?;
+    if let Err(err) = fsync_staged(dst) {
+        let cleanup = remove_stage_residue_report(dst);
+        return Err(format!("{err}{cleanup}"));
+    }
+    Ok(copied)
+}
+
+fn reserve_and_copy_file(src: &Path, staged: &Path, copied: &mut CopiedSources) -> io::Result<()> {
     // Synced inside, so the data is durable before `fsync_staged` syncs the
     // directory.
-    let result = super::publish::copy_file_preserving(src, staged);
-    if let Err(e) = &result
-        && e.kind() == io::ErrorKind::AlreadyExists
-    {
+    match super::publish::copy_file_preserving(src, staged) {
+        Ok(read) => {
+            copied.record(src, &read);
+            Ok(())
+        }
         // The reservation lost a race: nothing of ours to remove.
-        return result;
+        Err(e) if e.kind() == io::ErrorKind::AlreadyExists => Err(e),
+        Err(e) => {
+            // Best effort: the caller reports the original error.
+            let _ = std::fs::remove_file(staged);
+            Err(e)
+        }
     }
-    if let Err(e) = result {
-        // Best effort: the caller reports the original error.
-        let _ = std::fs::remove_file(staged);
-        return Err(e);
-    }
-    Ok(())
 }
 
 fn reserve_and_copy_dir(
     src: &Path,
     staged: &Path,
     entry_copied: &mut dyn FnMut(),
+    copied: &mut CopiedSources,
 ) -> io::Result<()> {
+    let md = src.symlink_metadata()?;
     super::publish::create_private_dir(staged)?;
-    let result = copy_tree_into(src, staged, entry_copied)
+    let result = copy_tree_into(src, staged, entry_copied, copied)
         .map_err(io::Error::other)
-        .and_then(|()| super::publish::finish_copied_dir(&src.metadata()?, staged));
+        .and_then(|()| super::publish::finish_copied_dir(&md, staged));
     if result.is_err() {
         let _ = std::fs::remove_dir_all(staged);
+    } else {
+        copied.record(src, &md);
     }
     result
-}
-
-fn reserve_and_create_symlink(target: &Path, staged: &Path) -> io::Result<()> {
-    std::os::unix::fs::symlink(target, staged)
 }
 
 // Same-filesystem branch for a type mismatch or non-empty directory: renames
@@ -560,24 +539,25 @@ pub(crate) fn stage_source_and_flush(
     dst: &Path,
     seams: &MoveSeams,
 ) -> Result<PathBuf, String> {
-    stage_source_and_flush_with_progress(src, dst, seams, &mut || {})
+    stage_source_and_flush_with_progress(src, dst, seams, &mut || {}).map(|(staged, _)| staged)
 }
 
+// Also returns the source entries staged; an override hook records none.
 pub(crate) fn stage_source_and_flush_with_progress(
     src: &Path,
     dst: &Path,
     seams: &MoveSeams,
     entry_copied: &mut dyn FnMut(),
-) -> Result<PathBuf, String> {
+) -> Result<(PathBuf, CopiedSources), String> {
     let src_kind = classify_source(src).map_err(|e| e.to_string())?;
     if let SourceKind::Unsupported(msg) = &src_kind {
         return Err(msg.clone());
     }
 
-    let staged = if let Some(hook) = seams.stage_copy_override {
+    let (staged, copied) = if let Some(hook) = seams.stage_copy_override {
         let candidate = marker_sibling(dst, "files-app-stage").map_err(|e| e.to_string())?;
         match hook(src, &candidate) {
-            Ok(()) => candidate,
+            Ok(()) => (candidate, CopiedSources::default()),
             Err(err) => {
                 let cleanup = remove_stage_residue_report(&candidate);
                 return Err(format!("{err}{cleanup}"));
@@ -596,47 +576,35 @@ pub(crate) fn stage_source_and_flush_with_progress(
         return Err(format!("{err}{cleanup}"));
     }
 
-    Ok(staged)
+    Ok((staged, copied))
 }
 
 // Cross-filesystem branch after `EXDEV`: stage, fsync, publish with backup
-// rollback, then remove the source only after the final fsync succeeds.
+// rollback, then remove the copied source entries only after the final fsync
+// succeeds.
 //
 // Any failure keeps the source and old destination; a failed tail fsync
 // leaves the destination published and the source retained as a duplicate.
+// Source entries created or changed during the copy are kept and reported.
 fn stage_cross_fs_replace(src: &Path, dst: &Path, seams: MoveSeams) -> Result<(), String> {
-    let staged = stage_source_and_flush(src, dst, &seams)?;
+    let (staged, copied) = stage_source_and_flush_with_progress(src, dst, &seams, &mut || {})?;
 
     match publish_with_backup(&staged, dst, &seams) {
         PublishOutcome::Published => {
-            // A distinct error keeps the batch from claiming success while the
-            // source is still visible.
-            remove_source_entry(src).map_err(|e| {
-                crate::i18n::format(
-                    "files-copied-to-but-could-not-remove-57ebb4b2",
-                    &[
-                        ("arg0", (dst.display()).to_string()),
-                        ("arg1", (src.display()).to_string()),
-                        ("e", (e).to_string()),
-                    ],
-                )
-            })
+            // A distinct error keeps the batch from claiming success while part
+            // of the source is still visible.
+            copied
+                .remove_from(src)
+                .map_err(|kept| source_kept(dst, &kept))
         }
         PublishOutcome::PublishedBackupRetained {
             backup,
             cleanup_error,
         } => {
             // Publish is durable, so removing the source is safe.
-            remove_source_entry(src).map_err(|e| {
-                crate::i18n::format(
-                    "files-copied-to-but-could-not-remove-57ebb4b2",
-                    &[
-                        ("arg0", (dst.display()).to_string()),
-                        ("arg1", (src.display()).to_string()),
-                        ("e", (e).to_string()),
-                    ],
-                )
-            })?;
+            copied
+                .remove_from(src)
+                .map_err(|kept| source_kept(dst, &kept))?;
             Err(crate::i18n::format(
                 "files-copied-to-but-backup-residue-at-99d8e716",
                 &[

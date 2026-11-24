@@ -112,15 +112,19 @@ impl Fixture {
             .clone()
             .expect("a conflict must be on screen");
         assert!(!app.model.conflicts_busy);
-        let mut q = queue;
-        q.resolve(choice, &mut services::perform_conflict_choice);
+        let q = block_on(crate::resolve_conflict(queue, choice, None));
         let activity = app
             .conflict_activity
             .expect("an open conflict carries its activity identity");
-        let _ = app.update(Msg::ConflictBatchFinished {
-            activity,
-            queue: Box::new(q),
-        });
+        let _ = app.update(Msg::ConflictBatchFinished { activity, queue: q });
+    }
+
+    fn current(&self, app: &App) -> conflict::Conflict {
+        app.model
+            .conflicts
+            .as_ref()
+            .and_then(|q| q.current.clone())
+            .expect("a conflict must be on screen")
     }
 }
 
@@ -159,6 +163,23 @@ fn merge_unions_the_directory_and_replace_would_not() {
 
     fx.resolve(&mut app, ConflictChoice::Merge);
 
+    let nested = fx.current(&app);
+    assert_eq!(nested.dst, fx.dst.join("d/shared"));
+    assert_eq!(nested.kind, ConflictKind::FileVsFile);
+    assert_eq!(
+        fs::read_to_string(fx.dst.join("d/shared")).unwrap(),
+        "DST-SHARED",
+        "a nested collision waits for its own decision"
+    );
+    assert_eq!(fs::read_to_string(fx.dst.join("d/bring")).unwrap(), "BRING");
+
+    fx.resolve(&mut app, ConflictChoice::Replace);
+
+    assert!(app.model.conflicts.is_none());
+    assert!(
+        !fx.src.join("d").exists(),
+        "the emptied Cut source folder is removed"
+    );
     assert_eq!(
         names(&fx.dst.join("d")),
         vec!["bring".to_owned(), "keep".to_owned(), "shared".to_owned()],
@@ -173,7 +194,7 @@ fn merge_unions_the_directory_and_replace_would_not() {
     assert_eq!(
         fs::read_to_string(fx.dst.join("d/shared")).unwrap(),
         "SRC-SHARED",
-        "a colliding child is replaced by the incoming one"
+        "a colliding child is replaced by the incoming one once chosen"
     );
     assert_eq!(
         app.model
@@ -181,8 +202,86 @@ fn merge_unions_the_directory_and_replace_would_not() {
             .as_deref()
             .map(crate::i18n::unisolated)
             .as_deref(),
-        Some("1 merged")
+        Some("1 replaced, 1 merged")
     );
+}
+
+#[test]
+fn merge_asks_before_swapping_nested_files_and_folders() {
+    for copy in [false, true] {
+        let fx = Fixture::new(if copy {
+            "mismatch-copy"
+        } else {
+            "mismatch-cut"
+        });
+        fx.write_src("d/file_over_folder", "SRC-FILE");
+        fx.write_dst("d/file_over_folder/kept", "DST-KEPT");
+        fx.write_src("d/folder_over_file/inner", "SRC-INNER");
+        fx.write_dst("d/folder_over_file", "DST-FILE");
+        fx.write_src("d/one.txt", "SRC-ONE");
+        fx.write_dst("d/one.txt", "DST-ONE");
+        fx.write_src("d/sub/two.txt", "SRC-TWO");
+        fx.write_dst("d/sub/two.txt", "DST-TWO");
+        let mut app = fx.app();
+        fx.paste(&mut app, &[fx.src.join("d")], copy);
+        fx.resolve(&mut app, ConflictChoice::Merge);
+
+        let mut asked = Vec::new();
+        while app.model.conflicts.is_some() {
+            let current = fx.current(&app);
+            asked.push(current.kind);
+            if current.kind == ConflictKind::FileVsFile {
+                let _ = app.update(Msg::SetApplyToAllConflicts(true));
+                fx.resolve(&mut app, ConflictChoice::Replace);
+            } else {
+                fx.resolve(&mut app, ConflictChoice::Skip);
+            }
+        }
+
+        // Replacing all files is sticky for files only: each swap still asks.
+        asked.sort_by_key(|kind| *kind == ConflictKind::FileVsFile);
+        assert_eq!(
+            asked,
+            vec![
+                ConflictKind::TypeMismatch,
+                ConflictKind::TypeMismatch,
+                ConflictKind::FileVsFile
+            ]
+        );
+        assert_eq!(
+            fs::read_to_string(fx.dst.join("d/file_over_folder/kept")).unwrap(),
+            "DST-KEPT"
+        );
+        assert_eq!(
+            fs::read_to_string(fx.dst.join("d/folder_over_file")).unwrap(),
+            "DST-FILE"
+        );
+        assert_eq!(
+            fs::read_to_string(fx.dst.join("d/one.txt")).unwrap(),
+            "SRC-ONE"
+        );
+        assert_eq!(
+            fs::read_to_string(fx.dst.join("d/sub/two.txt")).unwrap(),
+            "SRC-TWO"
+        );
+        assert_eq!(
+            fs::read_to_string(fx.src.join("d/file_over_folder")).unwrap(),
+            "SRC-FILE"
+        );
+        assert_eq!(
+            fs::read_to_string(fx.src.join("d/folder_over_file/inner")).unwrap(),
+            "SRC-INNER"
+        );
+        assert_eq!(fx.src.join("d/sub").exists(), copy);
+        assert_eq!(
+            app.model
+                .status_message
+                .as_deref()
+                .map(crate::i18n::unisolated)
+                .as_deref(),
+            Some("2 replaced, 1 merged, 2 skipped")
+        );
+    }
 }
 
 #[test]
@@ -414,11 +513,36 @@ fn merging_never_moves_the_contents_of_a_linked_folder() {
     let dst = tmp.path().join("dst/Photos");
     fs::create_dir_all(dst.join("inner")).unwrap();
 
-    let outcome =
-        services::perform_conflict_choice(&src, &dst, ConflictChoice::Merge, ClipMode::Cut);
+    let mut queue = conflict::ConflictQueue::new(
+        tmp.path().join("dst"),
+        ClipMode::Cut,
+        vec![conflict::Conflict {
+            kind: ConflictKind::FolderVsFolder,
+            dst_detail: String::new(),
+            src_detail: String::new(),
+            src,
+            dst: dst.clone(),
+            nested: false,
+        }],
+    );
+    queue.resolve(
+        ConflictChoice::Merge,
+        &mut services::perform_conflict_choice,
+    );
+    let nested = queue.current.clone().expect("the link over a folder asks");
+    assert_eq!(nested.kind, ConflictKind::TypeMismatch);
+    queue.resolve(
+        ConflictChoice::Replace,
+        &mut services::perform_conflict_choice,
+    );
+
     assert!(
-        !matches!(outcome, conflict::ItemOutcome::Failed(_)),
-        "{outcome:?}"
+        queue
+            .resolved
+            .iter()
+            .all(|item| !matches!(item.outcome, conflict::ItemOutcome::Failed(_))),
+        "{:?}",
+        queue.resolved
     );
     assert_eq!(fs::read(elsewhere.join("keep.jpg")).unwrap(), b"photo");
     assert!(
@@ -428,6 +552,60 @@ fn merging_never_moves_the_contents_of_a_linked_folder() {
             .is_symlink(),
         "the link itself moves; its target's files stay where they are"
     );
+}
+
+// ---- A cross-filesystem move removes only what it copied ----
+
+fn cross_device(_: &Path, _: &Path) -> std::io::Result<()> {
+    Err(std::io::Error::from_raw_os_error(libc::EXDEV))
+}
+
+fn change_source_during_copy(src: &Path, _staged: &Path) -> std::io::Result<()> {
+    fs::write(src.join("late.jpg"), b"late")?;
+    fs::write(src.join("sub/b.jpg"), b"edited after the copy read it")
+}
+
+#[test]
+fn a_cross_filesystem_move_keeps_source_entries_that_changed_during_the_copy() {
+    for (tag, late_writer) in [
+        ("quiet", None),
+        (
+            "busy",
+            Some(change_source_during_copy as fn(&Path, &Path) -> _),
+        ),
+    ] {
+        let tmp = TmpDir::new(tag);
+        let src = tmp.path().join("album");
+        fs::create_dir_all(src.join("sub")).unwrap();
+        fs::write(src.join("a.jpg"), b"a").unwrap();
+        fs::write(src.join("sub/b.jpg"), b"b").unwrap();
+        let dst = tmp.path().join("dest/album");
+        fs::create_dir_all(dst.parent().unwrap()).unwrap();
+        let mut seams = services::MoveSeams {
+            initial_rename: cross_device,
+            ..services::MoveSeams::PLACE
+        };
+        if let Some(hook) = late_writer {
+            seams.after_stage_flush = hook;
+        }
+
+        let result = services::move_replacing_with(&src, &dst, seams);
+
+        assert_eq!(fs::read(dst.join("a.jpg")).unwrap(), b"a");
+        assert_eq!(fs::read(dst.join("sub/b.jpg")).unwrap(), b"b");
+        assert!(!src.join("a.jpg").exists(), "a copied entry is removed");
+        if late_writer.is_none() {
+            assert_eq!(result, Ok(()));
+            assert!(!src.exists());
+        } else {
+            assert!(result.is_err(), "leftovers are reported, not hidden");
+            assert_eq!(fs::read(src.join("late.jpg")).unwrap(), b"late");
+            assert_eq!(
+                fs::read(src.join("sub/b.jpg")).unwrap(),
+                b"edited after the copy read it"
+            );
+        }
+    }
 }
 
 // ---- A folder is never pasted into itself (review B1.8) ----

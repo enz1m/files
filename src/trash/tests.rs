@@ -191,3 +191,40 @@ fn capture_admitted_metadata_twin_refuses_fifo_without_blocking() {
     let md = fs::symlink_metadata(&info_path).expect("fifo preserved");
     assert!(md.file_type().is_fifo(), "FIFO must not be removed");
 }
+
+#[test]
+fn cross_filesystem_fallback_refuses_a_fifo_without_blocking_or_touching_the_source() {
+    let root = tmp("copy-across-fifo");
+    let nested = root.join("folder");
+    fs::create_dir_all(&nested).unwrap();
+    fs::write(nested.join("keep.txt"), b"keep").unwrap();
+    plant_fifo(&nested.join("pipe"));
+    let top_level = root.join("pipe");
+    plant_fifo(&top_level);
+    let info = root.join("entry.trashinfo");
+    fs::write(&info, b"[Trash Info]\n").unwrap();
+
+    for source in [nested.clone(), top_level.clone()] {
+        let payload = root.join("payload");
+        let (probe_source, probe_payload, probe_info) =
+            (source.clone(), payload.clone(), info.clone());
+        assert_returned_within(
+            "copy_across",
+            std::time::Duration::from_secs(5),
+            move || {
+                copy_across(&probe_source, &probe_payload, &probe_info)
+                    .expect_err("a FIFO is refused");
+            },
+        );
+        assert!(
+            fs::symlink_metadata(&payload).is_err(),
+            "no partial payload remains"
+        );
+    }
+    assert_eq!(fs::read(nested.join("keep.txt")).unwrap(), b"keep");
+    use std::os::unix::fs::FileTypeExt;
+    for fifo in [nested.join("pipe"), top_level] {
+        assert!(fs::symlink_metadata(fifo).unwrap().file_type().is_fifo());
+    }
+    let _ = fs::remove_dir_all(&root);
+}

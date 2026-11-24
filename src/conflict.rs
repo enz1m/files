@@ -99,6 +99,9 @@ pub(crate) enum ItemOutcome {
     Replaced,
     // The two directory trees were unioned.
     Merged,
+    // Unioned except for nested collisions, which the queue asks about next
+    // and records as [`ItemOutcome::Merged`].
+    MergedPartly(MergeRemainder),
     // The operation was attempted and failed.
     Failed(String),
 }
@@ -107,9 +110,22 @@ impl ItemOutcome {
     pub(crate) const fn changed_destination(&self) -> bool {
         matches!(
             self,
-            ItemOutcome::Replaced | ItemOutcome::Merged | ItemOutcome::Moved | ItemOutcome::Copied
+            ItemOutcome::Replaced
+                | ItemOutcome::Merged
+                | ItemOutcome::MergedPartly(_)
+                | ItemOutcome::Moved
+                | ItemOutcome::Copied
         )
     }
+}
+
+// What a merge left undecided.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(crate) struct MergeRemainder {
+    // Nested collisions other than two folders, each needing its own decision.
+    pub(crate) conflicts: Vec<Conflict>,
+    // Cut source folders still holding undecided entries, deepest first.
+    pub(crate) source_dirs: Vec<PathBuf>,
 }
 
 // What a paste would do: the part needing no decision and the conflicts.
@@ -140,6 +156,7 @@ pub(crate) struct ResolvedItem {
     pub(crate) src: PathBuf,
     pub(crate) dst: PathBuf,
     pub(crate) outcome: ItemOutcome,
+    pub(crate) nested: bool,
 }
 
 // One conflict awaiting a decision.
@@ -152,6 +169,8 @@ pub(crate) struct Conflict {
     pub(crate) dst_detail: String,
     // The incoming source, rendered on the `New:` line.
     pub(crate) src_detail: String,
+    // Found inside a merged folder rather than among the pasted items.
+    pub(crate) nested: bool,
 }
 
 impl Conflict {
@@ -178,6 +197,9 @@ pub(crate) struct ConflictQueue {
     pub(crate) sticky: StickyDecision,
     // Everything already resolved, in resolution order.
     pub(crate) resolved: Vec<ResolvedItem>,
+    // Cut source folders that merges left behind, deepest first, for removal
+    // once their remaining entries are resolved.
+    pub(crate) merged_sources: Vec<PathBuf>,
     pub(crate) paused: bool,
     pub(crate) cancelled: bool,
 }
@@ -208,13 +230,19 @@ impl ConflictQueue {
                 },
                 other => other,
             };
-            moved.push(ResolvedItem { src, dst, outcome });
+            moved.push(ResolvedItem {
+                src,
+                dst,
+                outcome,
+                nested: false,
+            });
         }
         for (src, dst, reason) in plan.refused {
             moved.push(ResolvedItem {
                 src,
                 dst,
                 outcome: ItemOutcome::Failed(reason),
+                nested: false,
             });
         }
         moved.extend(queue.resolved);
@@ -241,6 +269,7 @@ impl ConflictQueue {
             apply_to_all: false,
             sticky: StickyDecision::default(),
             resolved: Vec::new(),
+            merged_sources: Vec::new(),
             paused: false,
             cancelled: false,
         }
@@ -317,6 +346,7 @@ impl ConflictQueue {
             src: conflict.src,
             dst: conflict.dst,
             outcome,
+            nested: conflict.nested,
         });
         self.advance(perform);
     }
@@ -334,6 +364,7 @@ impl ConflictQueue {
                         src: next.src,
                         dst: next.dst,
                         outcome,
+                        nested: next.nested,
                     });
                 }
                 None => {
@@ -347,9 +378,10 @@ impl ConflictQueue {
     }
 
     // Runs one decision. `Skip` never touches disk; other choices go to the
-    // executor with the [`ClipMode`].
+    // executor with the [`ClipMode`]. A merge's nested collisions queue next,
+    // under the same per-kind sticky decisions as top-level conflicts.
     fn perform_one(
-        &self,
+        &mut self,
         conflict: &Conflict,
         choice: ConflictChoice,
         perform: &mut impl FnMut(&Path, &Path, ConflictChoice, ClipMode) -> ItemOutcome,
@@ -357,14 +389,21 @@ impl ConflictQueue {
         if choice == ConflictChoice::Skip {
             return ItemOutcome::Skipped;
         }
-        perform(&conflict.src, &conflict.dst, choice, self.clip_mode)
+        match perform(&conflict.src, &conflict.dst, choice, self.clip_mode) {
+            ItemOutcome::MergedPartly(remainder) => {
+                self.remaining.splice(0..0, remainder.conflicts);
+                self.merged_sources.extend(remainder.source_dirs);
+                ItemOutcome::Merged
+            }
+            outcome => outcome,
+        }
     }
 
     // Counts top-level items whose destination was actually changed.
     pub(crate) fn completed_items(&self) -> usize {
         self.resolved
             .iter()
-            .filter(|item| item.outcome.changed_destination())
+            .filter(|item| !item.nested && item.outcome.changed_destination())
             .count()
     }
 

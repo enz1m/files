@@ -660,11 +660,15 @@ mod publish;
 mod stage;
 #[cfg(test)]
 pub(crate) use publish::perform_conflict_choice;
-pub(crate) use publish::{perform_conflict_choice_with_progress, plan_paste, plan_trash_restore};
-pub(crate) use stage::rename_paths_no_replace;
+pub(crate) use publish::{
+    CopiedSources, perform_conflict_choice_with_progress, plan_paste, plan_trash_restore,
+    remove_emptied_merge_sources, remove_stage_residue_fallible, source_kept,
+};
+#[cfg(test)]
+pub(crate) use stage::{MoveSeams, move_replacing_with};
+pub(crate) use stage::{copy_new_for_move, rename_paths_no_replace};
 pub(crate) use stage::{
-    is_cross_filesystem_error, move_merging, move_replacing, rename_reversing,
-    same_fs_no_replace_rename,
+    is_cross_filesystem_error, move_replacing, rename_reversing, same_fs_no_replace_rename,
 };
 
 // Explicit resource policy for the short unmount helpers.

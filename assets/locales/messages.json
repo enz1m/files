@@ -652,6 +652,13 @@
     "pattern": "{ \"Cannot extract into a virtual folder\" }"
   },
   {
+    "source": "Cannot merge {}: it is no longer a folder",
+    "kind": "format",
+    "id": "files-cannot-merge-it-is-no-longer-a-folder-8c2e41d7",
+    "pattern": "{ \"Cannot merge \" }{ $arg0 }{ \": it is no longer a folder\" }",
+    "numeric": []
+  },
+  {
     "source": "Cannot mount {uri} with a password: this build has no in-process GIO password-callback provider for {scheme}. The dialog left the password field enabled because the caller did not consult `Mounter::supports_authenticated_mount`. An anonymous mount (empty password) is still supported by this backend.",
     "kind": "format",
     "id": "files-cannot-mount-uri-with-a-password-2705be16",
@@ -1114,10 +1121,10 @@
     "numeric": []
   },
   {
-    "source": "Copied to {} but could not remove source {}: {e}",
+    "source": "Copied to {} but kept {} in the source because it changed during the move or could not be removed",
     "kind": "format",
-    "id": "files-copied-to-but-could-not-remove-57ebb4b2",
-    "pattern": "{ \"Copied to \" }{ $arg0 }{ \" but could not remove source \" }{ $arg1 }{ \": \" }{ $e }",
+    "id": "files-copied-to-but-kept-in-the-source-3d1f6a20",
+    "pattern": "{ \"Copied to \" }{ $arg0 }{ \" but kept \" }{ $arg1 }{ \" in the source because it changed during the move or could not be removed\" }",
     "numeric": []
   },
   {

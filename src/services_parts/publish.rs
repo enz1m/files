@@ -168,16 +168,87 @@ pub(crate) fn fsync_dir(path: &Path) -> io::Result<()> {
     std::fs::File::open(path)?.sync_all()
 }
 
-// Removes `src` after a completed cross-filesystem move, unlinking a symlink
-// rather than following it.
-pub(crate) fn remove_source_entry(src: &Path) -> io::Result<()> {
-    let md = src.symlink_metadata()?;
-    let ft = md.file_type();
-    if ft.is_symlink() || !ft.is_dir() {
-        std::fs::remove_file(src)
-    } else {
-        std::fs::remove_dir_all(src)
+// Source entries a copy read, each with the identity it had when read, in
+// removal order (a folder after its children).
+#[derive(Debug, Default)]
+pub(crate) struct CopiedSources(Vec<(PathBuf, EntryIdentity)>);
+
+#[derive(Debug, Eq, PartialEq)]
+struct EntryIdentity {
+    dev: u64,
+    ino: u64,
+    kind: u32,
+    size: u64,
+    modified: (i64, i64),
+}
+
+impl EntryIdentity {
+    fn of(metadata: &std::fs::Metadata) -> Self {
+        use std::os::unix::fs::MetadataExt;
+        // A folder's size and times change as its own children are removed.
+        let content = !metadata.is_dir();
+        Self {
+            dev: metadata.dev(),
+            ino: metadata.ino(),
+            kind: metadata.mode() & libc::S_IFMT,
+            size: if content { metadata.size() } else { 0 },
+            modified: if content {
+                (metadata.mtime(), metadata.mtime_nsec())
+            } else {
+                (0, 0)
+            },
+        }
     }
+}
+
+impl CopiedSources {
+    pub(crate) fn record(&mut self, path: &Path, metadata: &std::fs::Metadata) {
+        self.0
+            .push((path.to_path_buf(), EntryIdentity::of(metadata)));
+    }
+
+    // Removes each recorded entry that still has its recorded identity, one at a
+    // time and without following links, so anything created or changed during
+    // the copy stays.
+    //
+    // Returns the first entry kept, or `root` when it still exists unrecorded.
+    pub(crate) fn remove_from(&self, root: &Path) -> Result<(), PathBuf> {
+        let mut kept = None;
+        for (path, identity) in &self.0 {
+            let removed = match path.symlink_metadata() {
+                Err(e) if e.kind() == io::ErrorKind::NotFound => continue,
+                Ok(md) if EntryIdentity::of(&md) == *identity => {
+                    if md.is_dir() {
+                        std::fs::remove_dir(path)
+                    } else {
+                        std::fs::remove_file(path)
+                    }
+                }
+                Ok(_) => Err(io::Error::from(io::ErrorKind::Other)),
+                Err(e) => Err(e),
+            };
+            if removed.is_err() && kept.is_none() {
+                kept = Some(path.clone());
+            }
+        }
+        match kept {
+            Some(path) => Err(path),
+            None if root.symlink_metadata().is_ok() => Err(root.to_path_buf()),
+            None => Ok(()),
+        }
+    }
+}
+
+// The error for a move whose destination is complete but whose source kept
+// `kept`.
+pub(crate) fn source_kept(dst: &Path, kept: &Path) -> String {
+    crate::i18n::format(
+        "files-copied-to-but-kept-in-the-source-3d1f6a20",
+        &[
+            ("arg0", dst.display().to_string()),
+            ("arg1", kept.display().to_string()),
+        ],
+    )
 }
 
 // Removes a staging or backup residue and reports what remains.
@@ -213,7 +284,7 @@ pub(crate) fn remove_stage_residue_fallible(path: &Path) -> io::Result<()> {
 }
 
 // Copies the contents of `src` into `dst`, which the caller created with
-// `create_dir`.
+// `create_dir`, recording each source entry in `copied`.
 //
 // Owns every nested create, so a symlink race after `dst` exists still lands each
 // child under the caller's name. FIFOs, sockets, devices and entry read errors
@@ -222,6 +293,7 @@ pub(crate) fn copy_tree_into(
     src: &Path,
     dst: &Path,
     entry_copied: &mut dyn FnMut(),
+    copied: &mut CopiedSources,
 ) -> Result<(), String> {
     let rd = std::fs::read_dir(src).map_err(|e| e.to_string())?;
     for dent in rd {
@@ -241,12 +313,15 @@ pub(crate) fn copy_tree_into(
         if ft.is_symlink() {
             let target = std::fs::read_link(&child_src).map_err(|e| e.to_string())?;
             std::os::unix::fs::symlink(&target, &child_dst).map_err(|e| e.to_string())?;
+            copied.record(&child_src, &md);
         } else if ft.is_dir() {
             create_private_dir(&child_dst).map_err(|e| e.to_string())?;
-            copy_tree_into(&child_src, &child_dst, entry_copied)?;
+            copy_tree_into(&child_src, &child_dst, entry_copied, copied)?;
             finish_copied_dir(&md, &child_dst).map_err(|e| e.to_string())?;
+            copied.record(&child_src, &md);
         } else if ft.is_file() {
-            copy_file_preserving(&child_src, &child_dst).map_err(|e| e.to_string())?;
+            let read = copy_file_preserving(&child_src, &child_dst).map_err(|e| e.to_string())?;
+            copied.record(&child_src, &read);
         } else {
             return Err(crate::i18n::format(
                 "files-cannot-stage-unsupported-nested-file-type-0219b50d",
@@ -282,8 +357,8 @@ fn copied_times(metadata: &std::fs::Metadata) -> std::fs::FileTimes {
 // Copies a regular file to a new `dst`, keeping its permission bits and
 // access/modification times. The file is created with the source's mode, so
 // a private file is never readable by others mid-copy, and the data is
-// synced before returning.
-pub(crate) fn copy_file_preserving(src: &Path, dst: &Path) -> io::Result<()> {
+// synced before returning. Returns the source metadata read before the copy.
+pub(crate) fn copy_file_preserving(src: &Path, dst: &Path) -> io::Result<std::fs::Metadata> {
     use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
     let mut src_file = std::fs::File::open(src)?;
     let metadata = src_file.metadata()?;
@@ -297,7 +372,8 @@ pub(crate) fn copy_file_preserving(src: &Path, dst: &Path) -> io::Result<()> {
     // The umask narrowed the creation mode; set the exact bits.
     dst_file.set_permissions(std::fs::Permissions::from_mode(mode))?;
     dst_file.set_times(copied_times(&metadata))?;
-    dst_file.sync_all()
+    dst_file.sync_all()?;
+    Ok(metadata)
 }
 
 // A folder being filled by a copy: private to its owner until
@@ -430,6 +506,7 @@ pub(crate) fn plan_paste(
                 src_detail: describe_for_conflict(src),
                 src: src.clone(),
                 dst,
+                nested: false,
             });
         } else {
             reserved.insert(dst.clone());
@@ -531,6 +608,7 @@ pub(crate) fn plan_trash_restore(
             src_detail: describe_for_conflict(&entry.trashed_path),
             src: entry.trashed_path.clone(),
             dst: entry.original_path.clone(),
+            nested: false,
         });
     } else {
         plan.clear
@@ -578,7 +656,7 @@ fn copy_replacing_with_progress(
     seams: MoveSeams,
     entry_copied: &mut dyn FnMut(),
 ) -> Result<(), String> {
-    let staged = stage_source_and_flush_with_progress(src, dst, &seams, entry_copied)?;
+    let (staged, _) = stage_source_and_flush_with_progress(src, dst, &seams, entry_copied)?;
     match publish_with_backup(&staged, dst, &seams) {
         PublishOutcome::Published => Ok(()),
         PublishOutcome::PublishedBackupRetained {
@@ -641,26 +719,38 @@ fn copy_replacing_with_progress(
     }
 }
 
-// Copies the contents of `src` into `dst`, keeping non-colliding destination
-// entries (`ConflictChoice::Merge`); `src` is left intact.
+// Unions folder `src` into folder `dst` (`ConflictChoice::Merge`).
 //
-// Each colliding leaf goes through [`copy_replacing`], so a failure keeps that
-// leaf's old destination. An entry read error aborts before any child publishes.
-pub(crate) fn copy_merging(src: &Path, dst: &Path) -> Result<(), String> {
-    copy_merging_with(src, dst, MoveSeams::PRODUCTION)
+// Entries free in `dst` are placed without replacing anything and matching
+// subfolders merge recursively. Every other collision is returned undecided:
+// merging authorises neither replacing a file nor swapping a file and a folder.
+// A `Cut` removes each source folder once empty. An entry read error aborts.
+pub(crate) fn merge_into(
+    src: &Path,
+    dst: &Path,
+    mode: crate::conflict::ClipMode,
+) -> Result<crate::conflict::MergeRemainder, String> {
+    let mut remainder = crate::conflict::MergeRemainder::default();
+    merge_children(src, dst, mode, &mut remainder)?;
+    Ok(remainder)
 }
 
-// [`copy_merging`] with injectable [`MoveSeams`].
-pub(crate) fn copy_merging_with(src: &Path, dst: &Path, seams: MoveSeams) -> Result<(), String> {
-    use crate::conflict::is_real_dir;
-    if !is_real_dir(src) || !is_real_dir(dst) {
-        return copy_replacing_with(src, dst, seams);
-    }
+fn merge_children(
+    src: &Path,
+    dst: &Path,
+    mode: crate::conflict::ClipMode,
+    remainder: &mut crate::conflict::MergeRemainder,
+) -> Result<(), String> {
+    use crate::conflict::{ClipMode, is_real_dir};
+    let undecided_before = remainder.conflicts.len();
     let rd = std::fs::read_dir(src).map_err(|e| e.to_string())?;
     for dent in rd {
         let dent = dent.map_err(|e| {
             crate::i18n::format(
-                "files-aborting-copy-merge-of-into-could-da1743d7",
+                match mode {
+                    ClipMode::Cut => "files-aborting-merge-of-into-could-not-5c2514a6",
+                    ClipMode::Copy => "files-aborting-copy-merge-of-into-could-da1743d7",
+                },
                 &[
                     ("arg0", (src.display()).to_string()),
                     ("arg1", (dst.display()).to_string()),
@@ -671,12 +761,53 @@ pub(crate) fn copy_merging_with(src: &Path, dst: &Path, seams: MoveSeams) -> Res
         let child_src = dent.path();
         let child_dst = dst.join(dent.file_name());
         if is_real_dir(&child_src) && is_real_dir(&child_dst) {
-            copy_merging_with(&child_src, &child_dst, seams)?;
+            merge_children(&child_src, &child_dst, mode, remainder)?;
+        } else if child_dst.symlink_metadata().is_ok() {
+            remainder.conflicts.push(crate::conflict::Conflict {
+                kind: crate::conflict::classify(&child_src, &child_dst),
+                dst_detail: describe_for_conflict(&child_dst),
+                src_detail: describe_for_conflict(&child_src),
+                src: child_src,
+                dst: child_dst,
+                nested: true,
+            });
         } else {
-            copy_replacing_with(&child_src, &child_dst, seams)?;
+            match mode {
+                ClipMode::Cut => {
+                    super::stage::move_replacing_with(&child_src, &child_dst, MoveSeams::PLACE)?;
+                }
+                ClipMode::Copy => copy_replacing_with(&child_src, &child_dst, MoveSeams::PLACE)?,
+            }
         }
     }
-    Ok(())
+    if mode == ClipMode::Copy {
+        return Ok(());
+    }
+    if remainder.conflicts.len() > undecided_before {
+        remainder.source_dirs.push(src.to_path_buf());
+        return Ok(());
+    }
+    // A leftover entry the app did not create (hidden file, racing writer)
+    // must surface as an error, not success.
+    std::fs::remove_dir(src).map_err(|e| {
+        crate::i18n::format(
+            "files-merged-children-of-into-but-the-07f3eb1b",
+            &[
+                ("arg0", (src.display()).to_string()),
+                ("arg1", (dst.display()).to_string()),
+                ("e", (e).to_string()),
+            ],
+        )
+    })
+}
+
+// Removes the merged Cut source folders in `dirs` that are now empty, keeping
+// the ones that still hold skipped or undecided entries.
+pub(crate) fn remove_emptied_merge_sources(dirs: &mut Vec<PathBuf>) {
+    dirs.retain(|dir| match std::fs::remove_dir(dir) {
+        Ok(()) => false,
+        Err(e) => e.kind() != io::ErrorKind::NotFound,
+    });
 }
 
 // Runs one conflict decision against the filesystem.
@@ -701,19 +832,22 @@ pub(crate) fn perform_conflict_choice_with_progress(
     mode: crate::conflict::ClipMode,
     entry_copied: &mut dyn FnMut(),
 ) -> crate::conflict::ItemOutcome {
-    use crate::conflict::{ClipMode, ConflictChoice, ItemOutcome};
+    use crate::conflict::{ClipMode, ConflictChoice, ItemOutcome, is_real_dir};
     match (mode, choice) {
         (_, ConflictChoice::Skip) => ItemOutcome::Skipped,
-        (ClipMode::Cut, ConflictChoice::Merge) => match move_merging(src, dst) {
-            Ok(()) => ItemOutcome::Merged,
+        (_, ConflictChoice::Merge) if !(is_real_dir(src) && is_real_dir(dst)) => {
+            ItemOutcome::Failed(crate::i18n::format(
+                "files-cannot-merge-it-is-no-longer-a-folder-8c2e41d7",
+                &[("arg0", dst.display().to_string())],
+            ))
+        }
+        (_, ConflictChoice::Merge) => match merge_into(src, dst, mode) {
+            Ok(remainder) if remainder.conflicts.is_empty() => ItemOutcome::Merged,
+            Ok(remainder) => ItemOutcome::MergedPartly(remainder),
             Err(e) => ItemOutcome::Failed(e),
         },
         (ClipMode::Cut, ConflictChoice::Replace) => match move_replacing(src, dst) {
             Ok(()) => ItemOutcome::Replaced,
-            Err(e) => ItemOutcome::Failed(e),
-        },
-        (ClipMode::Copy, ConflictChoice::Merge) => match copy_merging(src, dst) {
-            Ok(()) => ItemOutcome::Merged,
             Err(e) => ItemOutcome::Failed(e),
         },
         (ClipMode::Copy, ConflictChoice::Replace) => match copy_replacing(src, dst) {
