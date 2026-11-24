@@ -867,6 +867,8 @@ pub(crate) enum LocationAction {
     ForceDisconnect,
     Rename,
     ShareSettings,
+    // Open Settings' backup set-up with this share chosen.
+    BackUpToShare,
     ChangeAccount,
     SetConnectionTiming(ConnectionTiming),
     SetAutoConnect(bool),
@@ -890,6 +892,7 @@ impl LocationAction {
             Self::ForceDisconnect => crate::i18n::tr("Disconnect Anyway"),
             Self::Rename => crate::i18n::tr("Rename…"),
             Self::ShareSettings => crate::i18n::tr("Share Settings"),
+            Self::BackUpToShare => crate::i18n::tr("Back Up to This Share…"),
             Self::ChangeAccount => crate::i18n::tr("Change account"),
             Self::SetConnectionTiming(timing) => crate::i18n::tr(timing.label()),
             Self::SetAutoConnect(_) => crate::i18n::tr("Connect at Login"),
@@ -912,6 +915,7 @@ impl LocationAction {
             Self::Disconnect | Self::ForceDisconnect => "unplug",
             Self::Rename => "pencil",
             Self::ShareSettings | Self::SetConnectionTiming(_) => "settings",
+            Self::BackUpToShare => "archive",
             Self::ChangeAccount | Self::SetAutoConnect(_) => "log-in",
             Self::SetMountAtBoot(_) => "power",
             Self::ForgetPassword => "key-round",
@@ -997,6 +1001,16 @@ fn connection_actions(location: &Location, service: &ServiceItem) -> Vec<Locatio
 fn network_actions(location: &Location, service: &ServiceItem) -> Vec<LocationAction> {
     let mut actions = connection_actions(location, service);
     actions.push(LocationAction::ShareSettings);
+    // Encrypted backups use SMB shares saved here (Settings › Backups).
+    if service.saved
+        && service.can_mount_at_boot
+        && service
+            .uri
+            .as_deref()
+            .is_some_and(|uri| uri.starts_with("smb://"))
+    {
+        actions.push(LocationAction::BackUpToShare);
+    }
     actions.push(LocationAction::Remove);
     actions
 }

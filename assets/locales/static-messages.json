@@ -152,6 +152,10 @@
     "files-back-up-now-f20b9903"
   ],
   [
+    "Back Up to This Share…",
+    "files-back-up-to-this-share"
+  ],
+  [
     "Back up",
     "files-back-up-0054e707"
   ],
@@ -594,6 +598,10 @@
   [
     "Could not delete: the Trash entry no longer exists",
     "files-could-not-delete-the-trash-entry-04fa8b84"
+  ],
+  [
+    "Could not open Backup Settings.",
+    "files-could-not-open-backup-settings"
   ],
   [
     "Could not open this folder",

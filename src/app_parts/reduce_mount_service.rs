@@ -729,6 +729,25 @@ impl App {
                 self.model.location_dialog = Some(LocationDialog::ShareSettings { id });
                 Task::none()
             }
+            LocationAction::BackUpToShare => {
+                // Settings knows the mount service's own id for the location.
+                let Some(id) = crate::mount_service::service_id(&id).map(str::to_owned) else {
+                    return Task::none();
+                };
+                let opener = std::sync::Arc::clone(&self.settings_opener);
+                let activation = self.main_window.map_or_else(
+                    || Task::done(None),
+                    |window| iced::window::request_activation_token(window).map(Result::ok),
+                );
+                activation.then(move |token| {
+                    let opener = std::sync::Arc::clone(&opener);
+                    let id = id.clone();
+                    Task::perform(
+                        crate::shell_work::run(move || opener.open_backup_share(&id, token)),
+                        Msg::NetworkSettingsOpened,
+                    )
+                })
+            }
             LocationAction::ChangeAccount => self.change_share_account(id),
             LocationAction::SetConnectionTiming(timing) => {
                 self.set_share_connection_timing(id, timing)
@@ -799,6 +818,7 @@ impl App {
                     | LocationAction::ShowSignIn
                     | LocationAction::Connect
                     | LocationAction::ShareSettings
+                    | LocationAction::BackUpToShare
                     | LocationAction::ChangeAccount
                     | LocationAction::SetConnectionTiming(_)
                     | LocationAction::Disconnect

@@ -13,6 +13,8 @@ const SETTINGS_PATH: &str = "/dev/enzui/Settings";
 const SETTINGS_NETWORK_URI: &str = "enzui-settings:network";
 const PROBE_TIMEOUT: Duration = Duration::from_secs(2);
 const OPEN_TIMEOUT: Duration = Duration::from_secs(10);
+// Settings may start from D-Bus activation and present its window first.
+const SETTINGS_OPEN_TIMEOUT: Duration = Duration::from_secs(30);
 const LAN_TYPES: [&str; 2] = ["802-11-wireless", "802-3-ethernet"];
 
 // Read-only assessment of whether local network discovery is restricted by the
@@ -88,6 +90,11 @@ pub(crate) type NetworkContextProbeHandle = Arc<dyn NetworkContextProbe>;
 
 pub(crate) trait SettingsOpener: Send + Sync {
     fn open_network_settings(&self, token: Option<ActivationToken>) -> Result<(), String>;
+    /// Opens Settings' network share backup set-up with location `id` chosen.
+    fn open_backup_share(&self, id: &str, token: Option<ActivationToken>) -> Result<(), String> {
+        let _ = (id, token);
+        Err(crate::i18n::tr("Could not open Backup Settings.").to_owned())
+    }
 }
 
 pub(crate) type SettingsOpenerHandle = Arc<dyn SettingsOpener>;
@@ -121,6 +128,28 @@ impl SettingsOpener for DbusSettingsOpener {
             .build()
             .map_err(|_| crate::i18n::tr("Could not open Network Settings.").to_owned())?;
         runtime.block_on(open_network_settings_dbus(token))
+    }
+    fn open_backup_share(&self, id: &str, token: Option<ActivationToken>) -> Result<(), String> {
+        let unavailable = || crate::i18n::tr("Could not open Backup Settings.").to_owned();
+        if cfg!(test)
+            || id.is_empty()
+            || id.len() > 64
+            || !id
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+        {
+            return Err(unavailable());
+        }
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|_| unavailable())?;
+        runtime
+            .block_on(open_settings_uri(
+                format!("enzui-settings:backups/destination?share={id}"),
+                token,
+            ))
+            .map_err(|()| unavailable())
     }
 }
 
@@ -325,6 +354,36 @@ async fn detect_settings_service() -> bool {
         .ok()
         .and_then(Result::ok)
         .is_some_and(|names| names.iter().any(|known| known.as_str() == SETTINGS_NAME))
+}
+
+async fn open_settings_uri(uri: String, token: Option<ActivationToken>) -> Result<(), ()> {
+    let connection = tokio::time::timeout(SETTINGS_OPEN_TIMEOUT, zbus::Connection::session())
+        .await
+        .map_err(drop)?
+        .map_err(drop)?;
+    let mut platform = HashMap::<&str, zbus::zvariant::Value<'_>>::new();
+    if let Some(token) = &token {
+        if let Some(value) = token.xdg_activation_token() {
+            platform.insert("activation-token", value.into());
+        }
+        if let Some(value) = token.desktop_startup_id() {
+            platform.insert("desktop-startup-id", value.into());
+        }
+    }
+    tokio::time::timeout(
+        SETTINGS_OPEN_TIMEOUT,
+        connection.call_method(
+            Some(SETTINGS_NAME),
+            SETTINGS_PATH,
+            Some("org.freedesktop.Application"),
+            "Open",
+            &(&[uri.as_str()][..], platform),
+        ),
+    )
+    .await
+    .map_err(drop)?
+    .map(drop)
+    .map_err(drop)
 }
 
 async fn open_network_settings_dbus(token: Option<ActivationToken>) -> Result<(), String> {
