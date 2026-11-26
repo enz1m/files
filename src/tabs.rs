@@ -253,8 +253,7 @@ impl Model {
         (locations, self.tabs.active)
     }
 
-    // Restores a saved session. Virtual or missing entries are skipped; an empty
-    // session changes nothing.
+    // Keep unavailable absolute paths so that mounts can return after startup.
     pub(crate) fn restore_session(&mut self, locations: &[PathBuf], active: usize) {
         let keep = |path: &&PathBuf| path.is_absolute() && !crate::services::is_virtual(path);
         let kept: Vec<&PathBuf> = locations.iter().take(MAX_TABS).filter(keep).collect();

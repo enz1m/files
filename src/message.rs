@@ -86,7 +86,7 @@ pub(crate) enum Msg {
     // Capture-only boot gate: directory and image previews are ready before
     // the main window is opened, preventing a first-paint race in visual QA.
     CapturePrepared {
-        entries: Vec<crate::model::FileEntry>,
+        entries: Result<Vec<crate::model::FileEntry>, String>,
         thumbnails: Vec<crate::thumbnail::Outcome>,
     },
 

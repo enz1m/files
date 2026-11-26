@@ -152,11 +152,19 @@ pub(crate) fn type_ahead_char(event: &iced::keyboard::Event) -> Option<char> {
 pub(crate) fn prepare_capture(
     path: PathBuf,
     cache_roots: Option<std::sync::Arc<private_data::ThumbnailNestedRoots>>,
-) -> impl std::future::Future<Output = (Vec<model::FileEntry>, Vec<thumbnail::Outcome>)> + Send + 'static
-{
+) -> impl std::future::Future<
+    Output = (
+        Result<Vec<model::FileEntry>, String>,
+        Vec<thumbnail::Outcome>,
+    ),
+> + Send
++ 'static {
     crate::shell_work::run(move || {
         crate::icon::initialize();
-        let entries = services::read_directory(&path).unwrap_or_default();
+        let entries = match services::read_directory(&path) {
+            Ok(entries) => entries,
+            Err(error) => return (Err(error.to_string()), Vec::new()),
+        };
         let thumbnails = entries
             .iter()
             .filter(|entry| thumbnail::eligible(&entry.path, &entry.mime, entry.size))
@@ -170,7 +178,7 @@ pub(crate) fn prepare_capture(
             })
             .map(|request| thumbnail::load(request, cache_roots.clone(), &|| false))
             .collect();
-        (entries, thumbnails)
+        (Ok(entries), thumbnails)
     })
 }
 
@@ -186,25 +194,54 @@ pub(crate) async fn load_prepared_dir(
     Option<std::time::SystemTime>,
     Result<(Vec<model::FileEntry>, model::FileEntryProvider), String>,
 ) {
-    crate::shell_work::run_cancellable(crate::shell_work::Pool::Listing, move |_| {
-        crate::icon::initialize();
-        let mtime = std::fs::metadata(&path).and_then(|m| m.modified()).ok();
-        let result = read_dir_blocking(&path).map(|entries| {
-            let provider = model::FileEntryProvider::build(
-                &entries,
-                model::EntrySource::Directory,
-                &policy,
-                &model::FileEntryProvider::default(),
-            );
-            (entries, provider)
-        });
-        (mtime, result)
-    })
-    .await
+    let mut retry_delays = [200, 500, 1000, 2000].into_iter();
+    loop {
+        let path = path.clone();
+        let policy = policy.clone();
+        let (mtime, result) =
+            crate::shell_work::run_cancellable(crate::shell_work::Pool::Listing, move |_| {
+                crate::icon::initialize();
+                let mtime = std::fs::metadata(&path).and_then(|m| m.modified()).ok();
+                let result = services::read_directory(&path).map(|entries| {
+                    let provider = model::FileEntryProvider::build(
+                        &entries,
+                        model::EntrySource::Directory,
+                        &policy,
+                        &model::FileEntryProvider::default(),
+                    );
+                    (entries, provider)
+                });
+                (mtime, result)
+            })
+            .await;
+        if result.as_ref().is_err_and(retryable_listing_error)
+            && let Some(milliseconds) = retry_delays.next()
+        {
+            crate::shell_work::delay(std::time::Duration::from_millis(milliseconds)).await;
+        } else {
+            return (mtime, result.map_err(|error| error.to_string()));
+        }
+    }
 }
 
-pub(crate) fn read_dir_blocking(path: &Path) -> Result<Vec<model::FileEntry>, String> {
-    services::read_directory(path).map_err(|e| e.to_string())
+fn retryable_listing_error(error: &std::io::Error) -> bool {
+    use std::io::ErrorKind::*;
+    matches!(
+        error.kind(),
+        NotFound
+            | Interrupted
+            | WouldBlock
+            | TimedOut
+            | NotConnected
+            | ConnectionAborted
+            | ConnectionReset
+            | HostUnreachable
+            | NetworkDown
+            | NetworkUnreachable
+    ) || matches!(
+        error.raw_os_error(),
+        Some(libc::EIO | libc::ESTALE | libc::EREMOTEIO)
+    )
 }
 
 pub(crate) fn load_drives() -> impl std::future::Future<Output = Vec<model::Drive>> + Send + 'static

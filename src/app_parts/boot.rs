@@ -644,18 +644,7 @@ impl App {
             app.toasts
                 .sync_expiry(&mut app.toast_expiry, std::time::Instant::now());
         }
-        let boot_generation = app.model.begin_load();
-        let policy = model::ProjectionPolicy::from_model(&app.model);
-        let load = Task::perform(
-            load_prepared_dir(start.clone(), policy.clone()),
-            move |(mtime, result)| Msg::DirPrepared {
-                path: start.clone(),
-                generation: boot_generation,
-                policy,
-                mtime,
-                result,
-            },
-        );
+        let load = app.reload();
         let mut tasks = vec![load, theme_boot.map(|event| Msg::Theme(Box::new(event)))];
         if let Some(mime) = startup_open_with_mime {
             let query = std::sync::Arc::clone(&app.mime_query);

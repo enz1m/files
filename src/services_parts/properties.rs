@@ -209,7 +209,7 @@ pub(crate) fn recursive_search(
                 .map(|n| n.to_string_lossy().into_owned())
                 .unwrap_or_default();
             if name.to_lowercase().contains(&needle)
-                && let Some(entry) = entry_from_path(&path)
+                && let Ok(entry) = entry_from_path(path)
             {
                 hits.push(entry);
                 if hits.len() >= MAX_HITS {

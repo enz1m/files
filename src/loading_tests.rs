@@ -47,3 +47,99 @@ fn a_named_pipe_is_never_opened_for_preview() {
     assert!(opened.is_err());
     assert!(started.elapsed() < std::time::Duration::from_secs(1));
 }
+
+#[test]
+fn an_async_restored_tab_waits_for_its_own_listing() {
+    use iced::futures::{StreamExt, executor::block_on};
+
+    let scratch = tempfile::tempdir().unwrap();
+    let directory = scratch.path().join("late-share");
+    let settings = scratch.path().join("view-settings");
+    view_settings_store::store(Some(&settings))
+        .save_blocking(&view_settings_store::ViewSettings {
+            tabs: vec![directory.clone()],
+            ..view_settings_store::ViewSettings::default()
+        })
+        .unwrap();
+
+    let mut roots = PersistenceRoots::disarmed();
+    roots.view_settings_path = Some(settings);
+    roots.async_view_settings_boot = true;
+    let (mut app, boot) = App::new_with_persistence(roots, false);
+    assert!(app.model.listing_pending);
+    let home = app.model.cwd.clone();
+    let boot_generation = app.model.load_generation;
+    let _ = app.update(Msg::DirLoaded {
+        path: home.clone(),
+        generation: boot_generation,
+        result: Ok(Vec::new()),
+    });
+    assert!(!app.model.listing_pending);
+
+    let mut boot = iced_runtime::task::into_stream(boot).unwrap();
+    let settings_loaded = block_on(async {
+        loop {
+            if let iced_runtime::Action::Output(message @ Msg::ViewSettingsLoaded(_)) =
+                boot.next().await.expect("boot settings completion")
+            {
+                break message;
+            }
+        }
+    });
+    let _ = app.update(settings_loaded);
+    assert_eq!(app.model.cwd, directory);
+    assert!(app.model.listing_pending);
+    assert!(app.model.load_error.is_none());
+
+    let _ = app.update(Msg::DirLoaded {
+        path: home,
+        generation: boot_generation,
+        result: Ok(Vec::new()),
+    });
+    let generation = app.model.load_generation;
+    let _ = app.update(Msg::ListingSlow { generation });
+    assert!(app.model.listing_pending && app.model.listing_slow);
+
+    let _ = app.update(Msg::DirLoaded {
+        path: directory,
+        generation,
+        result: Ok(Vec::new()),
+    });
+    assert!(!app.model.listing_pending && !app.model.listing_slow);
+    assert!(app.model.entries.is_empty());
+    assert!(app.model.load_error.is_none());
+}
+
+#[test]
+fn a_new_mount_supersedes_the_empty_listing_of_its_mountpoint() {
+    let scratch = tempfile::tempdir().unwrap();
+    let directory = scratch.path().to_path_buf();
+    let (mut app, _boot) =
+        App::new_with_start_directory(PersistenceRoots::disarmed(), false, Some(directory.clone()));
+    let unmounted_generation = app.model.load_generation;
+    let mut location = crate::storage::capture_fixture(&app.model.home).remove(0);
+    location.mount = Some(directory.clone());
+    location.kind = crate::storage::Kind::Network;
+    let _ = app.update(Msg::StorageLoaded(Ok(crate::storage::Inventory {
+        locations: vec![location],
+        cloud: Vec::new(),
+    })));
+    let _ = app.update(Msg::DirLoaded {
+        path: directory.clone(),
+        generation: unmounted_generation,
+        result: Ok(Vec::new()),
+    });
+    assert!(app.model.listing_pending);
+    assert!(app.model.load_error.is_none());
+
+    let entry = directory.join("Notes.txt");
+    std::fs::write(&entry, "ready").unwrap();
+    let _ = app.update(Msg::DirLoaded {
+        path: directory.clone(),
+        generation: app.model.load_generation,
+        result: services::read_directory(&directory).map_err(|error| error.to_string()),
+    });
+    assert!(!app.model.listing_pending);
+    assert_eq!(app.model.visible_provider.len(), 1);
+    assert_eq!(app.model.entries[0].path, entry);
+}

@@ -70,11 +70,19 @@ pub(crate) fn path_suggestions(query: &str, home: &Path) -> Vec<PathBuf> {
 // `symlink_metadata` and then dereferenced to fill kind/size for the target.
 pub(crate) fn read_directory(path: &Path) -> io::Result<Vec<FileEntry>> {
     let mut out = Vec::new();
+    let mut metadata_error = None;
     for dent in std::fs::read_dir(path)? {
-        let Ok(dent) = dent else { continue };
-        if let Some(entry) = entry_from_path(&dent.path()) {
-            out.push(entry);
+        match entry_from_path(dent?.path()) {
+            Ok(entry) => out.push(entry),
+            Err(error) => {
+                metadata_error.get_or_insert(error);
+            }
         }
+    }
+    if out.is_empty()
+        && let Some(error) = metadata_error
+    {
+        return Err(error);
     }
     Ok(out)
 }
@@ -124,13 +132,16 @@ fn sniff_mime(path: &Path, size: u64) -> Option<String> {
     text.then(|| "text/plain".to_owned())
 }
 
-// `None` when the path vanished after the directory read.
-fn entry_from_path(entry_path: &Path) -> Option<FileEntry> {
-    let name = entry_path.file_name()?.to_string_lossy().into_owned();
+fn entry_from_path(entry_path: PathBuf) -> io::Result<FileEntry> {
+    let name = entry_path
+        .file_name()
+        .ok_or(io::ErrorKind::InvalidInput)?
+        .to_string_lossy()
+        .into_owned();
     let is_hidden = name.starts_with('.');
-    let sym_md = std::fs::symlink_metadata(entry_path).ok()?;
+    let sym_md = std::fs::symlink_metadata(&entry_path)?;
     let (kind, size, modified) = if sym_md.file_type().is_symlink() {
-        let target_md = std::fs::metadata(entry_path).ok();
+        let target_md = std::fs::metadata(&entry_path).ok();
         let kind = if target_md.as_ref().is_some_and(std::fs::Metadata::is_dir) {
             EntryKind::Dir
         } else {
@@ -152,14 +163,14 @@ fn entry_from_path(entry_path: &Path) -> Option<FileEntry> {
     } else {
         let by_name = FileTypeTable::host().classify(&name).mime;
         if by_name == UNKNOWN_MIME && sym_md.is_file() {
-            sniff_mime(entry_path, size).unwrap_or(by_name)
+            sniff_mime(&entry_path, size).unwrap_or(by_name)
         } else {
             by_name
         }
     };
 
-    Some(FileEntry {
-        path: entry_path.to_path_buf(),
+    Ok(FileEntry {
+        path: entry_path,
         name,
         kind,
         size,

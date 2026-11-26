@@ -193,11 +193,12 @@ impl App {
         }
         let path = self.model.cwd.clone();
         let generation = self.model.begin_load();
+        self.model.listing_pending = true;
+        self.model.load_error = None;
         self.dir_load_in_flight = true;
         let policy = model::ProjectionPolicy::from_model(&self.model);
         let load = if let Some(adopted) = self.listings_in_flight.get_mut(&path) {
-            // Already being listed: that listing answers for this generation,
-            // and one more listing follows it in case it started too early.
+            // Keep one read per path, including when a mount replaces the directory.
             *adopted = generation;
             self.dir_watch_pending_rescan = true;
             Task::none()
@@ -214,8 +215,7 @@ impl App {
                 },
             )
         };
-        // A navigation's listing that takes a while shows a loading state.
-        let load = if self.model.listing_pending {
+        let load = if self.model.entries.is_empty() && !self.model.listing_slow {
             Task::batch([
                 load,
                 Task::perform(crate::shell_work::delay(LISTING_SLOW_AFTER), move |()| {
@@ -251,6 +251,7 @@ impl App {
         self.dir_watch_generation = self.dir_watch_generation.wrapping_add(1);
         self.current_dir_watch = None;
         self.dir_watch_pending_rescan = false;
+        self.verify_after_listing = false;
         self.dir_watch.submit(dir_watch_worker::InstallRequest {
             generation: self.dir_watch_generation,
             target,
@@ -420,6 +421,8 @@ impl App {
             // A stale `DirLoaded` must not repopulate the deleted folder.
             let _new_generation = self.model.begin_load();
             self.dir_load_in_flight = false;
+            self.model.listing_pending = false;
+            self.model.listing_slow = false;
             self.dir_watch_vanished = true;
             self.retire_dir_watch();
             self.model.entries.clear();

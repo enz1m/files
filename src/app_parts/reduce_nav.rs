@@ -52,6 +52,7 @@ impl App {
             Err(error) => (Err(error), None),
         };
         let accepted_now = self.model.screen == Screen::Directory
+            && !self.dir_watch_pending_rescan
             && self.model.cwd == listed_path
             && self
                 .listings_in_flight
@@ -94,18 +95,20 @@ impl App {
         else {
             unreachable!("misrouted message in nav_dir_loaded");
         };
-        // Path and screen equality cannot reject an earlier read of the same
-        // folder, so only the latest `generation` may overwrite or clear entries.
-        // A reload that waited for this listing adopted it under its newer
-        // generation.
-        let generation = self
+        // The latest generation owns settlement even when waiting on an older read.
+        let adopted = self
             .listings_in_flight
             .remove(&path)
             .map_or(generation, |adopted| adopted.max(generation));
         let accepted = self.model.screen == Screen::Directory
             && self.model.cwd == path
-            && generation == self.model.load_generation;
+            && adopted == self.model.load_generation;
         if accepted {
+            let rescan = std::mem::take(&mut self.dir_watch_pending_rescan);
+            // A mount can replace the directory underneath an in-flight read.
+            if rescan && (adopted != generation || result.as_ref().map_or(true, Vec::is_empty)) {
+                return self.reload();
+            }
             self.dir_load_in_flight = false;
             self.model.listing_pending = false;
             self.model.listing_slow = false;
@@ -130,8 +133,7 @@ impl App {
                             .iter()
                             .any(|entry| entry.path == folder.path))
             });
-            if self.dir_watch_pending_rescan {
-                self.dir_watch_pending_rescan = false;
+            if rescan {
                 let reload = self.reload();
                 return Task::batch([reload, self.main_window_scope()]);
             }
@@ -260,7 +262,14 @@ impl App {
         else {
             unreachable!("misrouted message in nav_capture_prepared");
         };
-        self.model.set_entries(entries);
+        self.dir_load_in_flight = false;
+        self.listings_in_flight.remove(&self.model.cwd);
+        self.model.listing_pending = false;
+        self.model.listing_slow = false;
+        match entries {
+            Ok(entries) => self.model.set_entries(entries),
+            Err(error) => self.model.load_error = Some(error),
+        }
         for outcome in thumbnails {
             if let Ok(handle) = outcome.result {
                 self.model.thumbnails.insert(
