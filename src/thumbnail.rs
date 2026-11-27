@@ -359,18 +359,16 @@ where
         _ => None,
     };
     let handle = thumbnail_handle(decoded).map_err(LoadError::DecodeFailed)?;
-    let (tw, th, raw) = match handle {
-        Handle::Rgba {
-            width,
-            height,
-            pixels,
-            ..
-        } => (width, height, pixels.to_vec()),
-        _ => {
-            return Err(LoadError::DecodeFailed(
-                crate::i18n::tr("thumbnail conversion did not return RGBA").into(),
-            ));
-        }
+    let Handle::Rgba {
+        width,
+        height,
+        pixels,
+        ..
+    } = &handle
+    else {
+        return Err(LoadError::DecodeFailed(
+            crate::i18n::tr("thumbnail conversion did not return RGBA").into(),
+        ));
     };
     if let Some(roots) = cache_roots {
         let name = cache_entry_name(&uri);
@@ -380,12 +378,12 @@ where
             &uri,
             stamp.mtime,
             source_size,
-            tw,
-            th,
-            &raw,
+            *width,
+            *height,
+            pixels,
         );
     }
-    Ok(Handle::from_rgba(tw, th, raw))
+    Ok(handle)
 }
 
 fn decode_image_bytes(bytes: &[u8]) -> Result<Handle, String> {
@@ -425,32 +423,35 @@ fn decode_source(path: &Path, mime: &str) -> Result<Handle, String> {
 }
 
 fn thumbnail_handle(handle: Handle) -> Result<Handle, Box<dyn std::error::Error>> {
-    let (width, height, pixels) = match handle {
-        Handle::Rgba {
-            width,
-            height,
-            pixels,
-            ..
-        } => (width, height, pixels.to_vec()),
-        _ => return Err(crate::i18n::tr("decoder did not return RGBA").into()),
+    let Handle::Rgba {
+        width,
+        height,
+        ref pixels,
+        ..
+    } = handle
+    else {
+        return Err(crate::i18n::tr("decoder did not return RGBA").into());
     };
     let Fit::Resize {
         width: target_width,
         height: target_height,
     } = fit_inside(width, height, NORMAL_SIZE)
     else {
-        // A source within 128 on both axes is already a normal thumbnail; keep it
-        // unresampled.
-        return Ok(Handle::from_rgba(width, height, pixels));
+        return Ok(handle);
     };
-    let rgba = image::RgbaImage::from_raw(width, height, pixels)
+    let rgba = image::ImageBuffer::<image::Rgba<u8>, _>::from_raw(width, height, pixels.as_ref())
         .ok_or_else(|| crate::i18n::tr("decoder returned an invalid RGBA buffer"))?;
-    let thumb = image::imageops::resize(
-        &rgba,
-        target_width,
-        target_height,
-        image::imageops::FilterType::Triangle,
-    );
+    // Area sampling may alias near the source size, so use it for large reductions only.
+    let thumb = if width / target_width >= 3 && height / target_height >= 3 {
+        image::imageops::thumbnail(&rgba, target_width, target_height)
+    } else {
+        image::imageops::resize(
+            &rgba,
+            target_width,
+            target_height,
+            image::imageops::FilterType::Triangle,
+        )
+    };
     Ok(Handle::from_rgba(
         target_width,
         target_height,
